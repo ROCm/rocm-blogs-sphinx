@@ -275,9 +275,12 @@ myst:
                         release_author = ";".join(extracted_metadata.get("author", "").split(","))
                         metadata_log_file_handle.write(f"Author: {extracted_metadata['author']}\n")
 
-                    if "thumbnail" not in extracted_metadata:
-                        extracted_metadata["thumbnail"] = ""
-                        extracted_metadata["og_image"] = ""
+                    if not extracted_metadata.get("thumbnail"):
+                        sphinx_diagnostics.info(
+                            f"Blog: {blog_filepath} does not have a thumbnail specified: {extracted_metadata}"
+                        )
+                        extracted_thumbnail = "generic.webp"
+                        og_image_extracted = "generic.webp"
                         sphinx_diagnostics.debug(
                             f"No thumbnail specified for blog: {blog_filepath}"
                         )
@@ -288,7 +291,8 @@ myst:
                         )
                         
                         # Store original thumbnail for og:image (non-webp)
-                        extracted_metadata["og_image"] = extracted_metadata["thumbnail"]
+                        extracted_og_image = extracted_metadata["thumbnail"]
+                        extracted_thumbnail = extracted_metadata["thumbnail"]
                         
                         # Convert thumbnail to webp for regular use
                         for f_format in SUPPORTED_FORMATS:
@@ -300,7 +304,7 @@ myst:
                             og_image_extracted = og_image_extracted.split(".")[0] + ".webp"
                         
                         metadata_log_file_handle.write(f"Thumbnail: {og_image_extracted}\n")
-                        metadata_log_file_handle.write(f"OG Image: {extracted_metadata['og_image']}\n")
+                        metadata_log_file_handle.write(f"OG Image: {extracted_og_image}\n")
 
                     if "date" not in extracted_metadata:
                         extracted_metadata["date"] = datetime.now().strftime("%d %B %Y")
@@ -465,7 +469,7 @@ myst:
                         metadata_log_file_handle.write(f"Generated release date: {amd_blog_releasedate}\n")
 
                         # Handle the release date - first try to find it in the blog metadata
-                        release_date_str = html_metadata.get("amd_blog_releasedate", html_metadata.get("amd_release_date", ""))
+                        release_date_str = ""
 
                         valid_release_date = False
                         valid_release_date_format = "%Y/%m/%d@%H:%M:%S"
@@ -571,7 +575,7 @@ myst:
                         blog_title=extracted_metadata["blog_title"],
                         date=extracted_metadata["date"],
                         author=extracted_metadata["author"],
-                        thumbnail=extracted_metadata['thumbnail'],
+                        thumbnail=extracted_thumbnail,
                         og_image=og_image_extracted,
                         tags=extracted_metadata.get("tags", ""),
                         category=extracted_metadata.get("category", "ROCm Blog"),

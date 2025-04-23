@@ -270,14 +270,15 @@ class Blog:
     def _generate_author_filename_variations(self, author: str) -> List[str]:
         """Generate possible filename variations for an author."""
         variations = [
-            author.replace(" ", "-").lower() + ".md",  # standard: "yu-wang.md"
-            author.lower().replace(" ", "-") + ".md",  # all lowercase: "yu-wang.md"
-            author.replace(" ", "").lower() + ".md",   # no spaces: "yuwang.md"
-            author.replace(" ", "_").lower() + ".md",  # underscores: "yu_wang.md"
-            author.replace("-", " ").replace(" ", "-").lower() + ".md",  # handle already hyphenated names
-            author.replace(" ", "-").title().replace(" ", "") + ".md",  # "YuWang.md"
-            author.replace(" ", "-") + ".md",  # preserve original case with hyphens
-            author + ".md",  # original name with .md
+            "-".join(author.split(" ")).lower() + ".md",
+            author.replace(" ", "-").lower() + ".md",
+            author.lower().replace(" ", "-") + ".md",
+            author.replace(" ", "").lower() + ".md",
+            author.replace(" ", "_").lower() + ".md",
+            author.replace("-", " ").replace(" ", "-").lower() + ".md",
+            author.replace(" ", "-").title().replace(" ", "").lower() + ".md",
+            author.replace(" ", "-").lower() + ".md",
+            author.lower() + ".md",
         ]
         
         # Remove duplicates and return

@@ -7,6 +7,7 @@ from datetime import datetime
 import importlib.resources as pkg_resources
 import os
 import time
+import re
 import functools
 import traceback
 import logging
@@ -241,12 +242,9 @@ def update_author_files(sphinx_app: Sphinx, rocm_blogs: ROCmBlogs) -> None:
             f"Processing author: {author}"
         )
 
-        first_name, last_name = author.split(" ", 1)
+        name = "-".join(author.split(" ")).lower()
 
-        first_name = first_name.lower()
-        last_name = last_name.lower()
-
-        author_file_path = Path(rocm_blogs.blogs_directory) / f"authors/{first_name}_{last_name}.md"
+        author_file_path = Path(rocm_blogs.blogs_directory) / f"authors/{name}.md"
 
         if not author_file_path.exists():
             sphinx_diagnostics.warning(
@@ -256,6 +254,58 @@ def update_author_files(sphinx_app: Sphinx, rocm_blogs: ROCmBlogs) -> None:
             sphinx_diagnostics.info(
                 f"Updating author file: {author_file_path}"
             )
+
+            with author_file_path.open("r", encoding="utf-8") as author_file:
+                author_content = author_file.read()
+
+            author_blogs = rocm_blogs.blogs.get_blogs_by_author(author)
+
+            author_grid_items = _generate_grid_items(rocm_blogs, author_blogs, 999, [], False)
+
+            try:
+                sphinx_diagnostics.info(
+                    f"Generating grid items for author: {author}"
+                )
+
+                author_css = import_file("rocm_blogs.static.css", "index.css")
+
+                author_content = author_content + "\n" + AUTHOR_TEMPLATE
+
+                updated_author_content = \
+                    author_content \
+                        .replace("{author_blogs}", "".join(author_grid_items)) \
+                        .replace("{author}", author) \
+                        .replace("{author_css}", author_css) \
+
+                if "{author_blogs}" in updated_author_content:
+                    sphinx_diagnostics.warning(
+                        f"Error: replacement failed for {author_file_path}"
+                    )
+                else:
+                    sphinx_diagnostics.info(
+                        f"Successfully updated author file: {author_file_path}"
+                    )
+            except Exception as error:
+                sphinx_diagnostics.error(
+                    f"Error processing author file: {error}"
+                )
+                sphinx_diagnostics.debug(
+                    f"Traceback: {traceback.format_exc()}"
+                )
+                _CRITICAL_ERROR_OCCURRED = True
+                raise ROCmBlogsError(f"Error processing author file: {error}")
+
+            with author_file_path.open("w", encoding="utf-8") as author_file:
+                author_file.write(updated_author_content)
+
+                if author_content != updated_author_content:
+                    sphinx_diagnostics.info(
+                        f"Author file updated successfully: {author_file_path}"
+                    )
+                else:
+                    sphinx_diagnostics.warning(
+                        f"Author file content unchanged: {author_file_path}"
+                    )
 
 def update_index_file(sphinx_app: Sphinx) -> None:
     """Update the index file with new blog posts."""
@@ -419,9 +469,7 @@ def update_index_file(sphinx_app: Sphinx) -> None:
         
         # Track blogs that have been used to avoid duplication
         used_blogs = []
-      
-        # Use featured blogs for banner slider if available, otherwise use the first N blogs
-        # Limit the number of featured blogs to BANNER_BLOGS_COUNT
+
         if featured_blogs:
             max_banner_blogs = min(len(featured_blogs), BANNER_BLOGS_COUNT)
             banner_blogs = featured_blogs[:max_banner_blogs]

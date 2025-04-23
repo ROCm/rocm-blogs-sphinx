@@ -230,7 +230,6 @@ class BlogHolder:
                 f"Available blog titles in system: {available_blog_titles}"
             )
             
-            # Log each featured title with exact character representation
             for index, title in enumerate(featured_titles):
                 sphinx_diagnostics.debug(
                     f"Featured title {index+1}: '{title}' (length: {len(title)})"
@@ -262,6 +261,21 @@ class BlogHolder:
                         sphinx_diagnostics.warning(
                             f"Featured blog not found: '{title}'. Possible close matches: {close_matches}"
                         )
+                        title = close_matches[0]
+                        blog = self.get_blog_by_title(title)
+                        if blog:
+                            if blog not in featured_blogs:
+                                sphinx_diagnostics.debug(
+                                    f"Adding blog '{title}' to featured blogs"
+                                )
+                                featured_blogs.append(blog)
+                            else:
+                                sphinx_diagnostics.warning(
+                                    f"Duplicate featured blog found: '{title}'"
+                                )
+                            sphinx_diagnostics.debug(
+                                f"Found featured blog: '{title}'"
+                            )
                     else:
                         sphinx_diagnostics.warning(
                             f"Featured blog not found: '{title}'. No close matches found."
@@ -439,6 +453,21 @@ class BlogHolder:
             f"No blog found with title: '{title}' (tried exact, case-insensitive, and normalized matching)"
         )
         return None
+    
+    def get_blogs_by_author(self, author: str) -> list[Blog]:
+        """Get blogs by author."""
+        
+        if author in self.blogs_authors:
+            blog_count = len(self.blogs_authors[author])
+            sphinx_diagnostics.debug(
+                f"Found {blog_count} blogs by author: {author}"
+            )
+            return self.blogs_authors[author]
+
+        sphinx_diagnostics.debug(
+            f"No blogs found by author: {author}"
+        )
+        return []
 
     def get_blogs_by_category(self, category: str) -> list[Blog]:
         """Get blogs by category."""

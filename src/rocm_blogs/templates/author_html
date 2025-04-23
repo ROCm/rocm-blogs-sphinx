@@ -235,73 +235,13 @@
   });
 </script>
 
+{author_content}
+
 <div class="container">
-  <h2>Featured Posts</h2>
+  <h2>Posts by {author}</h2>
 </div>
 
 ::::{grid} 1 2 3 4
 :margin 2
-{featured_grid_items}
+{author_blogs}
 ::::
-
-<div class="container">
-  <h2>Recent Posts</h2>
-  <a href="posts.html">
-    <button id="buttonWrapper">
-      See All
-    </button>
-  </a>
-</div>
-
-::::{grid} 1 2 3 4
-:margin 2
-{grid_items}
-::::
-
-<div class="container">
-  <h2>Ecosystems and partners</h2>
-  <a href="ecosystem-partners.html">
-    <button id="buttonWrapper">
-      See All
-    </button>
-  </a>
-</div>
-
-::::{grid} 1 2 3 4
-:margin 2
-{eco_grid_items}
-::::
-
-<div class="container">
-  <h2>Applications & models</h2>
-  <a href="applications-models.html">
-    <button id="buttonWrapper">
-      See All
-    </button>
-  </a>
-</div>
-
-::::{grid} 1 2 3 4
-:margin 2
-{application_grid_items}
-::::
-
-<div class="container">
-  <h2>Software tools & optimizations</h2>
-  <a href="software-tools.html">
-    <button id="buttonWrapper">
-      See All
-    </button>
-  </a>
-</div>
-
-::::{grid} 1 2 3 4
-:margin 2
-{software_grid_items}
-::::
-
-<h2> Stay informed</h2>
-<ul>
-  <li><a href="blog/atom.xml"> Subscribe to our <i class="fa fa-rss fa-rotate-270"></i> RSS feed</a> (Requires an RSS reader available as browser plugins.) </li>
-  <li><a href="https://www.amd.com/en/forms/sign-up/developer-news.html?temp_comments=ROCm%20Software"> Signup for the ROCm newsletter </a></li>
-</ul>

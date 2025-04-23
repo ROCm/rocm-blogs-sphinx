@@ -5,17 +5,7 @@ from sphinx.util import logging as sphinx_logging
 sphinx_diagnostics = sphinx_logging.getLogger(__name__)
 
 def generate_grid(ROCmBlogs, blog, lazy_load=False) -> str:
-    """
-    Takes a blog and creates a sphinx grid item with WebP image support.
-    
-    Args:
-        ROCmBlogs: The ROCmBlogs instance
-        blog: The blog object to generate a grid item for
-        lazy_load: Whether to use lazy loading for images
-        
-    Returns:
-        HTML string containing the grid item
-    """
+    """Takes a blog and creates a sphinx grid item with WebP image support."""
     
     sphinx_diagnostics.debug(
         f"Generating grid item for blog: {getattr(blog, 'blog_title', 'Unknown')}"
@@ -87,8 +77,6 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False) -> str:
         f"Authors list for grid item: {authors_list}"
     )
 
-    # Check if WebP version exists before calling grab_image
-    # This ensures we use the WebP version if available
     if hasattr(blog, "thumbnail") and blog.thumbnail:
         # Check if there's a WebP version of the thumbnail
         thumbnail_path = blog.thumbnail
