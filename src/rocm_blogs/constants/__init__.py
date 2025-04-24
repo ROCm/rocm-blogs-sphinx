@@ -37,6 +37,8 @@ AUTHOR_TEMPLATE = """
 {author_css}
 </style>
 
+
+
 <div class="container">
   <h2>Posts by {author}</h2>
 </div>

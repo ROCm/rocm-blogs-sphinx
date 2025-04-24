@@ -268,6 +268,8 @@ def update_author_files(sphinx_app: Sphinx, rocm_blogs: ROCmBlogs) -> None:
 
             author_blogs = rocm_blogs.blogs.get_blogs_by_author(author)
 
+            author_blogs.sort(key=lambda x: x.date, reverse=True)
+
             author_grid_items = _generate_grid_items(rocm_blogs, author_blogs, 999, [], False, True)
 
             # copy all blog images to authors/images directory
