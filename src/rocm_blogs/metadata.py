@@ -346,25 +346,19 @@ myst:
                             f"Category: {extracted_metadata['category']}"
                         )
                         metadata_log_file_handle.write(f"Category: {extracted_metadata['category']}\n")
+
+                    metadata_log_file_handle.write(f"HTML Metadata: {json.dumps(html_metadata, indent=2)}\n")
                         
                     # Extract AMD-specific metadata fields with default values if missing
-                    amd_technical_blog_type = html_metadata.get("amd_technical_blog_type", "Applications and models")
-                    metadata_log_file_handle.write(f"AMD Technical Blog Type: {amd_technical_blog_type}\n")
+                    amd_technical_blog_type = html_metadata.get("amd_technical_blog_type", "Applications and Models")
                     
-                    amd_blog_hardware_platforms = html_metadata.get("amd_blog_hardware_platforms", 
-                                                                  html_metadata.get("amd_hardware_deployment", "Instinct GPUs"))
+                    amd_blog_hardware_platforms = html_metadata.get("amd_blog_hardware_platforms", "Instinct GPUs")
                     
-                    metadata_log_file_handle.write(f"AMD Blog Hardware Platforms: {amd_blog_hardware_platforms}\n")
+                    amd_blog_deployment_tools = html_metadata.get("amd_blog_development_tools", "ROCm Software")
                     
-                    amd_blog_deployment_tools = html_metadata.get("amd_blog_deployment_tools", 
-                                                                html_metadata.get("amd_software_deployment", "ROCm Software"))
-                    metadata_log_file_handle.write(f"AMD Blog Deployment Tools: {amd_blog_deployment_tools}\n")
+                    amd_applications = html_metadata.get("amd_blog_applications", html_metadata.get("amd_applications", "AI & Intelligent Systems; Industry Applications & Use Cases"))
                     
-                    amd_applications = html_metadata.get("amd_applications", "AI Inference")
-                    metadata_log_file_handle.write(f"AMD Applications: {amd_applications}\n")
-                    
-                    amd_blog_category_topic = html_metadata.get("amd_blog_category_topic", "AI & Intelligent Systems, Industry Applications & Use Cases")
-                    metadata_log_file_handle.write(f"AMD Blog Category Topic: {amd_blog_category_topic}\n")
+                    amd_blog_category_topic = html_metadata.get("amd_blog_topic_categories", "AI & Intelligent Systems; Industry Applications & Use Cases")
 
                     # any input with commas will cause errors
                     weird_inputs_amd_blog_applications = ['Design, Simulation & Modeling']
@@ -376,11 +370,11 @@ myst:
                                 amd_applications = amd_applications.replace(weird_input, weird_input.replace(",", "/%2c/"))
                                 amd_applications = ";".join(amd_applications.split(","))
                                 amd_applications = amd_applications.replace("/%2c/", ",")
-                                metadata_log_file_handle.write(f"AMD Applications: {amd_applications}\n")
+                                metadata_log_file_handle.write(f"AMD Blog Applications: {amd_applications}\n")
                                 break
-                            else:
-                                amd_applications = ";".join(amd_applications.split(","))
-                                metadata_log_file_handle.write(f"AMD Applications: {amd_applications}\n")
+                    else:
+                        amd_applications = ";".join(amd_applications.split(","))
+                        metadata_log_file_handle.write(f"AMD Blog Applications: {amd_applications}\n")
 
                     amd_technical_blog_type = ";".join(amd_technical_blog_type.split(","))
                     metadata_log_file_handle.write(f"AMD Technical Blog Type: {amd_technical_blog_type}\n")
@@ -637,6 +631,9 @@ myst:
                     )
                     sphinx_diagnostics.debug(
                         f"Generated metadata content for {blog_filepath}"
+                    )
+                    metadata_log_file_handle.write(
+                        f"Generated metadata content: {formatted_metadata_content}\n"
                     )
                     metadata_log_file_handle.write(
                         f"Successfully generated metadata content\n"
