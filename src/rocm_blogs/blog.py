@@ -74,6 +74,15 @@ class Blog:
             date_str = date_str.replace(original, replacement)
             
         return date_str
+    
+    def grab_og_image(self) -> str:
+        return self.metadata.get("myst").get("html_meta").get("property=og:image", "https://rocm.blogs.amd.com/_images/generic.jpg")
+    
+    def grab_og_description(self) -> str:
+        return self.metadata.get("myst").get("html_meta").get("property=og:description", "No description available.")
+    
+    def grab_og_href(self) -> str:
+        return self.metadata.get("myst").get("html_meta").get("property=og:url", "https://rocm.blogs.amd.com/")
 
     def load_image_to_memory(self, image_path: str, format: str = "PNG") -> None:
         """Load an image into memory."""

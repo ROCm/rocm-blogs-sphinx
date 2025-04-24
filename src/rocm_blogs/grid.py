@@ -4,7 +4,7 @@ from sphinx.util import logging as sphinx_logging
 # Initialize logger
 sphinx_diagnostics = sphinx_logging.getLogger(__name__)
 
-def generate_grid(ROCmBlogs, blog, lazy_load=False) -> str:
+def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
     """Takes a blog and creates a sphinx grid item with WebP image support."""
     
     sphinx_diagnostics.debug(
@@ -244,6 +244,11 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False) -> str:
     sphinx_diagnostics.info(
         f"Generated grid item for '{title}'"
     )
+
+    if use_og:
+        image = blog.grab_og_image()
+        href = blog.grab_og_href()
+
     return grid_template.format(
         title=title,
         date=date,

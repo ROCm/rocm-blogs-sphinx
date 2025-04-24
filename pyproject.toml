@@ -3,7 +3,7 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rocm-blogs"
+name = "rocm-blogs-sphinx"
 version = "1.7.0"
 authors = [
     {name = "Danny Guan", email = "danny.guan@amd.com"}

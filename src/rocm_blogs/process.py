@@ -189,7 +189,7 @@ def _process_category(category_info, rocm_blogs, blogs_directory, pagination_tem
             f"Created {output_path} with {len(page_grid_items)} grid items (page {page_num}/{total_pages})"
         )
 
-def _generate_grid_items(rocm_blogs, blog_list, max_items, used_blogs, skip_used=True):
+def _generate_grid_items(rocm_blogs, blog_list, max_items, used_blogs, skip_used=True, use_og=False):
     """Generate grid items in parallel using thread pool."""
 
     try:
@@ -222,7 +222,7 @@ def _generate_grid_items(rocm_blogs, blog_list, max_items, used_blogs, skip_used
                 if blog_entry not in used_blogs:
                     used_blogs.append(blog_entry)
                     
-                grid_futures[executor.submit(generate_grid, rocm_blogs, blog_entry)] = blog_entry
+                grid_futures[executor.submit(generate_grid, rocm_blogs, blog_entry, False, use_og)] = blog_entry
                 item_count += 1
 
             for future in grid_futures:

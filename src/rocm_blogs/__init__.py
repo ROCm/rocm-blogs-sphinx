@@ -229,6 +229,14 @@ def update_author_files(sphinx_app: Sphinx, rocm_blogs: ROCmBlogs) -> None:
     rocm_blogs.find_author_files()
     rocm_blogs.blogs.blogs_authors
 
+    log_filepath, log_file_handle = create_step_log_file(phase_name)
+
+    if log_file_handle:
+            log_file_handle.write(f"Starting {phase_name} process\n")
+
+    for blog in rocm_blogs.blogs.get_blogs():
+        log_file_handle.write(f"Blog: {blog}\n")
+
     sphinx_diagnostics.info(
         f"Author files to be updated: {rocm_blogs.author_paths}"
     )
@@ -260,8 +268,17 @@ def update_author_files(sphinx_app: Sphinx, rocm_blogs: ROCmBlogs) -> None:
 
             author_blogs = rocm_blogs.blogs.get_blogs_by_author(author)
 
-            author_grid_items = _generate_grid_items(rocm_blogs, author_blogs, 999, [], False)
+            author_grid_items = _generate_grid_items(rocm_blogs, author_blogs, 999, [], False, True)
 
+            # copy all blog images to authors/images directory
+            for blog in author_blogs:
+                blog_images = blog.image_paths
+                for image in blog_images:
+                    image_path = Path(image)
+                    if image_path.exists():
+                        destination_path = Path(rocm_blogs.blogs_directory) / f"authors/images/{image}"
+                        destination_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy(image_path, destination_path)
             try:
                 sphinx_diagnostics.info(
                     f"Generating grid items for author: {author}"
@@ -507,7 +524,7 @@ def update_index_file(sphinx_app: Sphinx) -> None:
             
         # Filter out featured blogs from the main grid
         non_featured_blogs = [blog for blog in all_blogs if id(blog) not in featured_blog_ids]
-        main_grid_items = _generate_grid_items(rocm_blogs, non_featured_blogs, MAIN_GRID_BLOGS_COUNT, used_blogs, True)
+        main_grid_items = _generate_grid_items(rocm_blogs, non_featured_blogs, MAIN_GRID_BLOGS_COUNT, used_blogs, True, False)
         
         if log_file_handle:
             log_file_handle.write(f"Generated {len(main_grid_items)} main grid items\n")
@@ -527,9 +544,9 @@ def update_index_file(sphinx_app: Sphinx) -> None:
         if log_file_handle:
             log_file_handle.write(f"Generating category grid items with up to {CATEGORY_GRID_BLOGS_COUNT} blogs per category\n")
             
-        ecosystem_grid_items = _generate_grid_items(rocm_blogs, ecosystem_blogs, CATEGORY_GRID_BLOGS_COUNT, used_blogs, True)
-        application_grid_items = _generate_grid_items(rocm_blogs, application_blogs, CATEGORY_GRID_BLOGS_COUNT, used_blogs, True)
-        software_grid_items = _generate_grid_items(rocm_blogs, software_blogs, CATEGORY_GRID_BLOGS_COUNT, used_blogs, True)
+        ecosystem_grid_items = _generate_grid_items(rocm_blogs, ecosystem_blogs, CATEGORY_GRID_BLOGS_COUNT, used_blogs, True, False)
+        application_grid_items = _generate_grid_items(rocm_blogs, application_blogs, CATEGORY_GRID_BLOGS_COUNT, used_blogs, True, False)
+        software_grid_items = _generate_grid_items(rocm_blogs, software_blogs, CATEGORY_GRID_BLOGS_COUNT, used_blogs, True, False)
         
         if log_file_handle:
             log_file_handle.write(f"Generated category grid items:\n")
@@ -546,7 +563,7 @@ def update_index_file(sphinx_app: Sphinx) -> None:
             try:
                 # Only generate grid items if we have at least one featured blog
                 if len(featured_blogs) > 0:
-                    featured_grid_items = _generate_grid_items(rocm_blogs, featured_blogs, len(featured_blogs), used_blogs, False)
+                    featured_grid_items = _generate_grid_items(rocm_blogs, featured_blogs, len(featured_blogs), used_blogs, False, False)
                     
                     if log_file_handle:
                         log_file_handle.write(f"Generated {len(featured_grid_items)} featured grid items\n")
@@ -1535,9 +1552,9 @@ def _register_event_handlers(sphinx_app: Sphinx) -> None:
     """Register event handlers for the ROCm Blogs extension."""
     try:
         # Register event handlers
+        sphinx_app.connect("builder-inited", run_metadata_generator)
         sphinx_app.connect("builder-inited", update_index_file)
         sphinx_app.connect("builder-inited", blog_generation)
-        sphinx_app.connect("builder-inited", run_metadata_generator)
         sphinx_app.connect("builder-inited", update_posts_file)
         sphinx_app.connect("builder-inited", update_category_pages)
         sphinx_app.connect("build-finished", log_total_build_time)
