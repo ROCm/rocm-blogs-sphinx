@@ -967,7 +967,7 @@ def update_index_file(sphinx_app: Sphinx) -> None:
         updated_html = (
             index_template
             .replace("{grid_items}", "\n".join(main_grid_items))
-            .replace("{eco_grid_items}", "\n".join(ecosystem_grid_items))
+            .replace("{eco_grid_items}", "\n".join(ecosystem_grid_items) if ecosystem_grid_items else "")
             .replace("{application_grid_items}", "\n".join(application_grid_items))
             .replace("{software_grid_items}", "\n".join(software_grid_items))
             .replace("{featured_grid_items}", "\n".join(featured_grid_items))

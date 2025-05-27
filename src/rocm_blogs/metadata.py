@@ -243,7 +243,7 @@ def classify_blog_tags(blog_tags, metadata_log_file_handle=None):
     min_score_threshold = 1.0
     selected_verticals = [(vertical, score) for vertical, score in top_verticals if score >= min_score_threshold]
 
-    max_verticals = 3
+    max_verticals = 99
     if len(selected_verticals) > max_verticals:
         selected_verticals = selected_verticals[:max_verticals]
     

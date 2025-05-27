@@ -807,14 +807,18 @@ def process_single_blog(blog_entry, rocm_blogs):
             blog_language = getattr(blog_entry, "language", "en")
             blog_category = getattr(blog_entry, "category", "blog")
             blog_tags = getattr(blog_entry, "tags", "")
-            market_vertical = blog_entry.metadata.get("myst").get("html_meta", {}).get("vertical", "")
+            market_verticals = blog_entry.metadata.get("myst").get("html_meta", {}).get("vertical", "").split(", ") if hasattr(blog_entry, "metadata") and blog_entry.metadata else []
 
-            if market_vertical:
-                market_vertical_list = []
-                for vertical in market_vertical.split(","):
-                    vertical_html = f'<a href="https://rocm.blogs.amd.com/{vertical.lower()}.html">{vertical}</a>'
-                    market_vertical_list.append(vertical_html)
-            market_vertical = ", ".join(market_vertical_list) if market_vertical_list else ""
+            # sanitize and format market verticals
+            # output_filename = vertical.replace(" ", "-").lower()
+            # output_filename = re.sub(r'[^a-z0-9-]', '', output_filename)
+
+            if not market_verticals:
+                market_vertical = "No Market Vertical"
+            else:
+                market_vertical = ", ".join([
+                    f'<a href="https://rocm.blogs.amd.com/{vertical.lower().replace(" ", "-")}.html">{vertical}</a>' for vertical in market_verticals if vertical.strip()
+                ])
 
             tag_html_list = []
             if blog_tags:
