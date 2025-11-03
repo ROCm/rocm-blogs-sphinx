@@ -568,6 +568,21 @@ def update_author_files(sphinx_app: Sphinx, rocm_blogs: ROCmBlogs) -> None:
                         )
                         destination_path.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy(image_path, destination_path)
+
+            author_data_dir = Path(rocm_blogs.blogs_directory) / "author" / "data"
+            if author_data_dir.exists() and author_data_dir.is_dir():
+                author_images_dest = Path(rocm_blogs.blogs_directory) / "blogs" / "_images"
+                author_images_dest.mkdir(parents=True, exist_ok=True)
+                for image_file in author_data_dir.iterdir():
+                    if image_file.is_file() and image_file.suffix.lower() in ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp']:
+                        dest_path = author_images_dest / image_file.name
+                        shutil.copy(image_file, dest_path)
+                        log_message(
+                            "info",
+                            f"Copied author data image: {image_file.name} to {dest_path}",
+                            "general",
+                            "__init__",
+                        )
             try:
                 log_message(
                     "info",

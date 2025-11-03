@@ -1489,7 +1489,7 @@ def extract_author_metadata(
                         Path(blogs_directory) / f"authors/data/{thumbnail_value}"
                     )
                     if local_image_path.exists():
-                        author_thumbnail_url = f"../_images/{thumbnail_value}"
+                        author_thumbnail_url = f"../_static/{thumbnail_value}"
                         if log_file_handle:
                             safe_log_write(
                                 log_file_handle,
