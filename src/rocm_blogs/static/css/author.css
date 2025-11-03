@@ -1,0 +1,98 @@
+.author-image-container {
+    width: 300px;
+    height: 300px;
+    margin: 0 0 2rem 0;
+    overflow: hidden;
+}
+
+.author-thumbnail-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+@media (min-width: 769px) {
+    section:has(.align-left) {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2rem;
+        align-items: flex-start;
+    }
+
+    section .align-left {
+        float: none !important;
+        width: 250px !important;
+        margin: 0 !important;
+        flex-shrink: 0;
+    }
+
+    section .align-left img {
+        width: 100%;
+        height: auto;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        display: block;
+    }
+
+    section:has(.align-left) h1 {
+        width: 100%;
+        flex: 0 0 100%;
+    }
+
+    section .align-left ~ p,
+    section .align-left ~ div {
+        flex: 1;
+        min-width: 300px;
+    }
+
+    section:has(.align-left)::after {
+        content: '';
+        display: table;
+        clear: both;
+    }
+
+    .author-image-container {
+        float: left;
+        margin: 0 2rem 2rem 0;
+    }
+}
+
+@media (max-width: 768px) {
+    section .align-left {
+        float: none !important;
+        margin: 0 auto 1.5rem auto !important;
+        max-width: 250px;
+        display: block;
+    }
+
+    section .align-left img {
+        width: 100%;
+        height: auto;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        display: block;
+    }
+
+    section .align-left ~ p {
+        clear: both;
+        margin-left: 0 !important;
+    }
+
+    .author-image-container {
+        float: none;
+        margin: 0 auto 1.5rem auto;
+    }
+}
+
+html[data-theme="dark"] section .align-left img,
+html[data-theme="dark"] .author-thumbnail-img {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.author-thumbnail-img.image-error {
+    opacity: 0.5;
+    filter: grayscale(100%);
+}

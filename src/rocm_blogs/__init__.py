@@ -19,6 +19,9 @@ from jinja2 import Template
 from sphinx.application import Sphinx
 from sphinx.errors import SphinxError
 from sphinx.util import logging as sphinx_logging
+from .process import (_create_pagination_controls, _generate_grid_items,
+                      _generate_lazy_loaded_grid_items, _process_category,
+                      process_single_blog)
 
 sphinx_diagnostics = sphinx_logging.getLogger(__name__)
 
@@ -58,9 +61,7 @@ from .constants import *
 from .images import *
 from .logger.logger import *
 from .metadata import *
-from .process import (_create_pagination_controls, _generate_grid_items,
-                      _generate_lazy_loaded_grid_items, _process_category,
-                      process_single_blog)
+from .process import *
 from .project.project_info import append_to_universal_log, log_project_info
 from .utils import *
 
@@ -413,6 +414,10 @@ def update_author_files(sphinx_app: Sphinx, rocm_blogs: ROCmBlogs) -> None:
             author_blogs = []
             skipped_count = 0
 
+            author_thumbnail_url, metadata_end_position = extract_author_metadata(
+                author_content, rocm_blogs.blogs_directory, author, log_file_handle
+            )
+
             for blog in all_author_blogs:
                 # Check if this is a genuine blog post (has the blogpost flag set to true)
                 if hasattr(blog, "blogpost") and blog.blogpost:
@@ -547,7 +552,6 @@ def update_author_files(sphinx_app: Sphinx, rocm_blogs: ROCmBlogs) -> None:
                 f"\nCalling _generate_grid_items with use_og=True for author [{author}]\n",
             )
             safe_log_write(log_file_handle, f"=" * 80 + "\n\n")
-            # COMPREHENSIVE AUTHOR DEBUGGING - END
 
             author_grid_items = _generate_grid_items(
                 rocm_blogs, author_blogs, 999, [], False, True
@@ -572,14 +576,51 @@ def update_author_files(sphinx_app: Sphinx, rocm_blogs: ROCmBlogs) -> None:
                     "__init__",
                 )
 
+                author_image_html = ""
+                if author_thumbnail_url:
+                    author_image_html = f"""
+<div class="author-image-container">
+    <picture>
+        <img
+            src="{author_thumbnail_url}"
+            class="author-thumbnail-img"
+            alt="{author}"
+            decoding="async"
+            loading="eager"
+            onerror="this.onerror=null; this.classList.add('image-error'); console.warn('Author image failed:', this.src);"
+        >
+    </picture>
+    <noscript>
+        <img src="{author_thumbnail_url}" alt="{author}" class="author-thumbnail-img" loading="eager">
+    </noscript>
+</div>
+"""
+
                 author_css = import_file("rocm_blogs.static.css", "index.css")
+                author_page_css = import_file("rocm_blogs.static.css", "author.css")
+                combined_css = author_css + "\n\n" + author_page_css
+
+                if author_image_html:
+                    if metadata_end_position > 0:
+                        before_metadata = author_content[:metadata_end_position]
+                        after_metadata = author_content[metadata_end_position:]
+                        author_content = (
+                            before_metadata
+                            + "\n"
+                            + author_image_html
+                            + "\n"
+                            + after_metadata
+                        )
+                    else:
+                        author_content = author_image_html + "\n\n" + author_content
 
                 author_content = author_content + "\n" + AUTHOR_TEMPLATE
 
                 updated_author_content = (
                     author_content.replace("{author_blogs}", "".join(author_grid_items))
                     .replace("{author}", author)
-                    .replace("{author_css}", author_css)
+                    .replace("{author_css}", combined_css)
+                    .replace("{author_image_html}", "")
                 )
                 if "{author_blogs}" in updated_author_content:
                     log_message(
