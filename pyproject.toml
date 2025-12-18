@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rocm-blogs-sphinx"
-version = "1.11.1"
+version = "1.13.0"
 authors = [
     {name = "Danny Guan", email = "danny.guan@amd.com"}
 ]

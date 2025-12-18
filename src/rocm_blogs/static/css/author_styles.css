@@ -1,0 +1,81 @@
+
+/* Author Page Styling - Responsive Image Layout */
+
+/* Desktop layout - image and text side by side */
+@media (min-width: 769px) {
+    /* Target author page sections with aligned images */
+    section:has(.align-left) {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2rem;
+        align-items: flex-start;
+    }
+
+    /* Override default left float behavior */
+    section .align-left {
+        float: none !important;
+        width: 250px !important;
+        margin: 0 !important;
+        flex-shrink: 0;
+    }
+
+    /* Image styling enhancements */
+    section .align-left img {
+        width: 100%;
+        height: auto;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        display: block;
+    }
+
+    /* Ensure heading takes full width */
+    section:has(.align-left) h1 {
+        width: 100%;
+        flex: 0 0 100%;
+    }
+
+    /* Text content flows next to image */
+    section .align-left ~ p,
+    section .align-left ~ div {
+        flex: 1;
+        min-width: 300px;
+    }
+
+    /* Clear any lingering floats */
+    section:has(.align-left)::after {
+        content: '';
+        display: table;
+        clear: both;
+    }
+}
+
+/* Mobile layout - stacked vertically */
+@media (max-width: 768px) {
+    /* Remove float and center image */
+    section .align-left {
+        float: none !important;
+        margin: 0 auto 1.5rem auto !important;
+        max-width: 250px;
+        display: block;
+    }
+
+    /* Image styling for mobile */
+    section .align-left img {
+        width: 100%;
+        height: auto;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        display: block;
+    }
+
+    /* Clear float for text content */
+    section .align-left ~ p {
+        clear: both;
+        margin-left: 0 !important;
+    }
+}
+
+/* Dark mode shadow adjustment */
+html[data-theme="dark"] section .align-left img {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}

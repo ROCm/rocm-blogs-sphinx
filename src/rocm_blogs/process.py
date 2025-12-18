@@ -7,6 +7,7 @@ import shutil
 import threading
 import time
 import traceback
+import yaml
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -1463,3 +1464,54 @@ def process_single_blog(blog_entry, rocm_blogs):
             "process",
         )
         raise
+
+
+def extract_author_metadata(
+    author_content, blogs_directory, author_name, log_file_handle=None
+):
+    """Extract and process author metadata including thumbnail image."""
+
+    author_thumbnail_url = None
+    metadata_end_position = 0
+    metadata_match = re.search(r"^---\s*\n(.*?)\n---\s*\n", author_content, re.DOTALL)
+
+    if metadata_match:
+        metadata_end_position = metadata_match.end()
+        try:
+            author_metadata = yaml.safe_load(metadata_match.group(1))
+            if author_metadata and "thumbnail" in author_metadata:
+                thumbnail_value = author_metadata["thumbnail"]
+
+                if thumbnail_value.startswith(("http://", "https://")):
+                    author_thumbnail_url = thumbnail_value
+                else:
+                    local_image_path = (
+                        Path(blogs_directory) / f"authors/data/{thumbnail_value}"
+                    )
+                    if local_image_path.exists():
+                        author_thumbnail_url = f"../_static/{thumbnail_value}"
+                        if log_file_handle:
+                            safe_log_write(
+                                log_file_handle,
+                                f"Using local image for [{author_name}]: {author_thumbnail_url}\n",
+                            )
+                    else:
+                        if log_file_handle:
+                            safe_log_write(
+                                log_file_handle,
+                                f"Local image not found for [{author_name}]: {local_image_path}\n",
+                            )
+
+                if author_thumbnail_url and log_file_handle:
+                    safe_log_write(
+                        log_file_handle,
+                        f"Found thumbnail for [{author_name}]: {author_thumbnail_url}\n",
+                    )
+        except Exception as yaml_error:
+            if log_file_handle:
+                safe_log_write(
+                    log_file_handle,
+                    f"Error parsing metadata for [{author_name}]: {yaml_error}\n",
+                )
+
+    return author_thumbnail_url, metadata_end_position
