@@ -45,11 +45,11 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
 :class: small-sd-card
 :img-lazy-load: true
 +++
+<div class="date">{date}</div>
 <a href="{href}" class="small-card-header-link">
     <h2 class="card-header">{title}</h2>
 </a>
 <p class="paragraph">{description}</p>
-<div class="date">{date} {authors_html}</div>
 :::
 """
 
@@ -81,12 +81,6 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
             log_file_handle,
             f"No myst metadata found, using default description. has_myst: {has_myst}, myst_value: {myst_value}\n",
         )
-
-    authors_list = getattr(blog, "author", "").split(",")
-    safe_log_write(
-        log_file_handle,
-        f"Authors list for grid item: {authors_list} (count: {len(authors_list)})\n",
-    )
 
     if use_og:
         safe_log_write(
@@ -470,37 +464,11 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
             )
             href = "#"
 
-    authors_html = ""
-    if authors_list:
-        try:
-            authors_html = blog.grab_authors(authors_list, ROCmBlogs)
-            safe_log_write(
-                log_file_handle,
-                f"Generated authors HTML: '{authors_html}' (count: {len(authors_list)})\n",
-            )
-        except Exception as authors_error:
-            safe_log_write(
-                log_file_handle,
-                f"Error generating authors HTML: {authors_error}, authors_list: {authors_list}\n",
-            )
-
-    if authors_html:
-        authors_html = f"by {authors_html}"
-        safe_log_write(
-            log_file_handle, f"Final authors HTML with prefix: '{authors_html}'\n"
-        )
-    else:
-        safe_log_write(
-            log_file_handle,
-            f"No valid authors found for grid item, authors_list: {authors_list}\n",
-        )
-
     try:
         grid_content = grid_template.format(
             title=title,
             date=date,
             description=description,
-            authors_html=authors_html,
             image=image,
             href=href,
         )
@@ -559,7 +527,7 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
         )
         safe_log_write(
             log_file_handle,
-            f"Template variables - title: '{title}', date: '{date}', description: '{description[:50]}...', authors_html: '{authors_html}', image: '{image}', href: '{href}'\n",
+            f"Template variables - title: '{title}', date: '{date}', description: '{description[:50]}...', image: '{image}', href: '{href}'\n",
         )
         if log_file_handle:
             try:

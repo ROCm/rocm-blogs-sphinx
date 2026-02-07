@@ -216,17 +216,22 @@ html[data-theme="dark"] .container {
     --paragraph-color-dark: #b0b0b0;
     --link-hover-light: #0066cc;
     --link-hover-dark: #4d9fff;
+    --card-border-light: rgba(0, 0, 0, 0.06);
+    --card-border-dark: rgba(255, 255, 255, 0.08);
+    --date-color-light: #6d6d6d;
+    --date-color-dark: #9b9b9b;
 }
 
 .sd-card {
     border-radius: 0 !important;
-    box-shadow: 0 4px 12px var(--shadow-light) !important;
+    box-shadow: 0 2px 8px var(--shadow-light) !important;
     transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out !important;
     overflow: hidden;
     margin-bottom: 20px;
     background-color: var(--card-bg-light);
-    border: none !important;
-    height: 400px !important; 
+    border: 1px solid var(--card-border-light) !important;
+    height: auto !important;
+    min-height: 0 !important;
     display: flex !important;
     flex-direction: column !important;
     will-change: transform, box-shadow; 
@@ -236,13 +241,13 @@ html[data-theme="dark"] .container {
 }
 
 .sd-card:hover {
-    transform: translateY(-2px) scale(1.02) translateZ(0) !important;
+    transform: translateY(-2px) scale(1.01) translateZ(0) !important;
     box-shadow: 0 8px 20px var(--hover-shadow-light) !important;
 }
 
 .small-sd-card-img-top.sd-card-img-top {
     width: 100%;
-    height: 250px;
+    height: 180px;
     object-fit: cover;
     margin: 0 !important;
     padding: 0 !important;
@@ -282,10 +287,11 @@ html[data-theme="dark"] .small-sd-card-img-top.sd-card-img-top {
 .sd-card-footer {
     border-top: none !important;
     background-color: var(--card-bg-light) !important;
-    padding: 16px !important;
+    padding: 16px 18px 18px !important;
     flex-grow: 1 !important;
     display: flex !important;
     flex-direction: column !important;
+    gap: 8px;
     
     contain: content; 
 }
@@ -305,8 +311,9 @@ html[data-theme="dark"] .small-sd-card-img-top.sd-card-img-top {
     font-size: 18px;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     font-weight: 700;
-    line-height: 1.4;
-    margin-bottom: 15px;
+    line-height: 1.3;
+    margin: 0;
+    letter-spacing: -0.01em;
     color: var(--text-color-light);
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -331,7 +338,7 @@ html[data-theme="dark"] .small-sd-card-img-top.sd-card-img-top {
 .paragraph {
     font-size: 14px;
     line-height: 1.5;
-    margin-bottom: 15px;
+    margin: 0;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     color: var(--paragraph-color-light);
     display: -webkit-box;
@@ -343,31 +350,19 @@ html[data-theme="dark"] .small-sd-card-img-top.sd-card-img-top {
 }
 
 .date {
-    font-size: 13px;
-    font-weight: 300;
-    line-height: 1.5;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.4;
     text-transform: none;
-    margin-bottom: 15px;
+    margin: 0 0 6px;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    margin-top: auto;
-    max-width: 100% !important;
-    display: -webkit-box !important;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    word-wrap: break-word !important;
-}
-
-.date a {
-    display: inline !important;
-    word-wrap: break-word !important;
-    overflow-wrap: break-word !important;
+    color: var(--date-color-light);
 }
 
 html[data-theme="dark"] .sd-card {
     background-color: var(--card-bg-dark) !important;
     box-shadow: 0 4px 12px var(--shadow-dark) !important;
+    border: 1px solid var(--card-border-dark) !important;
 }
 
 html[data-theme="dark"] .sd-card:hover {
@@ -395,23 +390,10 @@ html[data-theme="dark"] .container h2 {
 }
 
 html[data-theme="dark"] .date {
-    color: var(--paragraph-color-dark);
+    color: var(--date-color-dark);
 }
 
 @media (min-width: 1220px) {
-    .sd-card {
-        height: 520px !important;
-    }
-    
-    .paragraph {
-        -webkit-line-clamp: 3;
-        display: -webkit-box;
-    }
-    
-    .card-header {
-        -webkit-line-clamp: 3;
-    }
-
     .sd-row > [class*="sd-col"] {
         flex: 0 0 25% !important;
         max-width: 25% !important;
@@ -419,53 +401,15 @@ html[data-theme="dark"] .date {
 }
 
 @media (min-width: 1024px) and (max-width: 1220px) {
-    .sd-card {
-        height: 510px !important;
-    }
-    
-    .paragraph {
-        -webkit-line-clamp: 3;
-        display: -webkit-box;
-    }
-    
-    .card-header {
-        -webkit-line-clamp: 3;
-    }
-
     .sd-row > [class*="sd-col"] {
         flex: 0 0 33.333333% !important;
         max-width: 33.333333% !important;
     }
 }
 
-@media (min-width: 768px) and (max-width: 991px) {
-    .sd-card {
-        height: 490px !important;
-    }
-    
-    .paragraph {
-        -webkit-line-clamp: 4;
-        display: -webkit-box;
-    }
-    
-    .card-header {
-        -webkit-line-clamp: 2;
-    }
-}
-
 @media (min-width:576px) and (max-width: 1024px) {
-    .sd-card {
-        height: 470px !important;
-    }
-    
-    .paragraph {
-        -webkit-line-clamp: 3;
-        display: -webkit-box;
-    }
-    
     .card-header {
-        -webkit-line-clamp: 3;
-        font-size: 16px;
+        font-size: 17px;
     }
 
     .sd-row > [class*="sd-col"] {
@@ -475,18 +419,8 @@ html[data-theme="dark"] .date {
 }
 
 @media (max-width: 575px) {
-    .sd-card {
-        height: 510px !important;
-    }
-    
-    .paragraph {
-        -webkit-line-clamp: 3;
-        display: -webkit-box;
-    }
-    
     .card-header {
-        -webkit-line-clamp: 2;
-        font-size: 16px;
+        font-size: 17px;
     }
 
     .sd-row > [class*="sd-col"] {
