@@ -136,7 +136,7 @@ MIN_SIZE_REDUCTION_PCT = 2.0  # Reduced from 5.0% to 2.0% for more WebP conversi
 
 # Image format-specific optimization settings
 FORMAT_SETTINGS = {
-    "JPEG": {"quality": 95, "optimize": True, "progressive": True},
+    "JPEG": {"quality": 85, "optimize": True, "progressive": True},
     "PNG": {"optimize": True, "compress_level": 9},
     "GIF": {"optimize": True},
     "WEBP": {"quality": 98, "method": 6},  # Increased quality from 95 to 98
@@ -157,9 +157,9 @@ CONSERVATIVE_SETTINGS = {
 }
 
 # WebP conversion settings
-WEBP_QUALITY = 98  # Increased for better quality over space savings
+WEBP_QUALITY = 85  # Balance quality and file size for web delivery
 WEBP_METHOD = 6  # Higher values = better quality but slower
-WEBP_CONSERVATIVE_QUALITY = 95  # Increased for better quality
+WEBP_CONSERVATIVE_QUALITY = 90  # Conservative mode with smaller file sizes
 WEBP_CONSERVATIVE_METHOD = 6  # Improved quality for conservative mode
 
 # Category definitions

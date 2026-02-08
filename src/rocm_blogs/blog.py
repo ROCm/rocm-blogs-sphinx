@@ -6,8 +6,9 @@ import io
 import json
 import os
 import pathlib
+import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Set, Union
 
 from PIL import Image
 from sphinx.util import logging as sphinx_logging
@@ -16,44 +17,99 @@ from .logger.logger import *
 
 # Global caches for performance optimization during blog processing
 _author_bio_cache: Dict[str, Dict[str, bool]] = {}
-_image_manifest_cache: Dict[str, Dict[str, str]] = {}
+_image_manifest_cache: Dict[str, Dict[str, List[str]]] = {}
+_image_manifest_paths_cache: Dict[str, Set[str]] = {}
 _relative_path_cache: Dict[str, str] = {}
 
 
-def build_image_manifest(blogs_directory: str) -> Dict[str, str]:
+def build_image_manifest(blogs_directory: str) -> Dict[str, List[str]]:
     """Build manifest of available images in blogs directory."""
     global _image_manifest_cache
+    global _image_manifest_paths_cache
 
     if blogs_directory in _image_manifest_cache:
         return _image_manifest_cache[blogs_directory]
 
-    manifest = {}
+    manifest: Dict[str, List[str]] = {}
+    manifest_paths: Set[str] = set()
+
+    if not blogs_directory:
+        _image_manifest_cache[blogs_directory] = manifest
+        _image_manifest_paths_cache[blogs_directory] = manifest_paths
+        return manifest
+
+    start_time = time.perf_counter()
     blogs_path = pathlib.Path(blogs_directory)
 
     # Define supported image file extensions for processing
-    image_extensions = [".jpg", ".jpeg", ".png", ".webp", ".gif"]
+    image_extensions = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+    skip_dirs = {"_static", "__pycache__", ".git"}
 
-    for extension in image_extensions:
-        # Search within the dedicated images directory
-        images_directory = blogs_path / "images"
-        if images_directory.exists():
-            for image_file in images_directory.glob(f"*{extension}"):
-                if image_file.is_file():
-                    manifest[image_file.name.lower()] = str(image_file)
+    def add_image(image_file: pathlib.Path) -> None:
+        if not image_file.is_file():
+            return
+        if image_file.suffix.lower() not in image_extensions:
+            return
+        if image_file.parent.name in skip_dirs:
+            return
 
-        # Search within blog-specific subdirectories for embedded images
-        for subdirectory in blogs_path.rglob("*"):
-            if subdirectory.is_dir() and subdirectory.name not in [
-                "_static",
-                "__pycache__",
-                ".git",
-            ]:
-                for image_file in subdirectory.glob(f"*{extension}"):
-                    if image_file.is_file():
-                        manifest[image_file.name.lower()] = str(image_file)
+        path_str = str(image_file)
+        path_key = path_str.lower()
+        if path_key in manifest_paths:
+            return
+
+        name_key = image_file.name.lower()
+        manifest.setdefault(name_key, []).append(path_str)
+        manifest_paths.add(path_key)
+
+    images_directory = blogs_path / "images"
+    if images_directory.exists():
+        for image_file in images_directory.iterdir():
+            add_image(image_file)
+
+    for image_file in blogs_path.rglob("*"):
+        add_image(image_file)
 
     _image_manifest_cache[blogs_directory] = manifest
+    _image_manifest_paths_cache[blogs_directory] = manifest_paths
+
+    duration = time.perf_counter() - start_time
+    log_message(
+        "info",
+        f"Built image manifest for {blogs_directory}: {len(manifest_paths)} images, {len(manifest)} names in {duration:.2f}s",
+        "general",
+        "blog",
+    )
     return manifest
+
+
+def register_image_in_manifest(
+    blogs_directory: str, image_path: Union[str, pathlib.Path]
+) -> None:
+    """Register a newly created image in the manifest caches."""
+    if not blogs_directory:
+        return
+
+    manifest = _image_manifest_cache.get(blogs_directory)
+    manifest_paths = _image_manifest_paths_cache.get(blogs_directory)
+    if manifest is None or manifest_paths is None:
+        return
+
+    path_obj = pathlib.Path(image_path)
+    if not path_obj.is_file():
+        return
+
+    if path_obj.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+        return
+
+    path_str = str(path_obj)
+    path_key = path_str.lower()
+    if path_key in manifest_paths:
+        return
+
+    manifest_paths.add(path_key)
+    name_key = path_obj.name.lower()
+    manifest.setdefault(name_key, []).append(path_str)
 
 
 def cache_author_bio_existence(blogs_directory: str) -> Dict[str, bool]:
@@ -108,6 +164,7 @@ class Blog:
         self.image = image
         self.image_paths = []
         self.word_count = 0
+        self._image_cache: Dict[tuple[str, str], pathlib.Path] = {}
 
         # Dynamically assign attributes based on metadata dictionary contents
         for key, value in metadata.items():
@@ -274,7 +331,8 @@ class Blog:
 
     def save_image_path(self, image_path: str) -> None:
         """Save image path."""
-        self.image_paths.append(image_path)
+        if image_path not in self.image_paths:
+            self.image_paths.append(image_path)
 
     def parse_date(self, date_str: Optional[str]) -> Optional[datetime]:
         """Parse date string to datetime object."""
@@ -361,13 +419,26 @@ class Blog:
     def grab_image(self, rocmblogs) -> pathlib.Path:
         """Find and return blog image path."""
         image = getattr(self, "thumbnail", None)
+        blogs_directory = getattr(rocmblogs, "blogs_directory", "") or ""
+        image_key = image if image else "__generic__"
+        cache_key = (blogs_directory, str(image_key))
+
+        cached_path = self._image_cache.get(cache_key)
+        if cached_path is not None:
+            log_message(
+                "debug",
+                f"Image cache hit for {image_key} in {blogs_directory}",
+                "general",
+                "blog",
+            )
+            return cached_path
 
         if not image:
             # First check if generic.webp exists in blogs/images directory
             blogs_generic_webp = None
-            if hasattr(rocmblogs, "blogs_directory") and rocmblogs.blogs_directory:
+            if blogs_directory:
                 blogs_generic_webp_path = os.path.join(
-                    rocmblogs.blogs_directory, "images", "generic.webp"
+                    blogs_directory, "images", "generic.webp"
                 )
                 if os.path.exists(blogs_generic_webp_path):
                     blogs_generic_webp = blogs_generic_webp_path
@@ -386,16 +457,22 @@ class Blog:
             if blogs_generic_webp:
                 self.image = "generic.webp"
                 self.save_image_path("generic.webp")
-                return pathlib.Path("./images/generic.webp")
+                result = pathlib.Path("./images/generic.webp")
+                self._image_cache[cache_key] = result
+                return result
             elif static_generic_webp:
                 self.image = "generic.webp"
                 self.save_image_path("generic.webp")
-                return pathlib.Path("./images/generic.webp")
+                result = pathlib.Path("./images/generic.webp")
+                self._image_cache[cache_key] = result
+                return result
             else:
                 # Fall back to generic.jpg if no WebP version is available
                 self.image = "generic.jpg"
                 self.save_image_path("generic.jpg")
-                return pathlib.Path("./images/generic.jpg")
+                result = pathlib.Path("./images/generic.jpg")
+                self._image_cache[cache_key] = result
+                return result
 
         # Extract just the filename if a path is provided
         if "/" in image or "\\" in image:
@@ -405,11 +482,13 @@ class Blog:
         if os.path.isabs(image) and os.path.exists(image):
             full_image_path = pathlib.Path(image)
             self.save_image_path(os.path.basename(str(full_image_path)))
-            return self._get_relative_path(full_image_path, rocmblogs.blogs_directory)
+            result = self._get_relative_path(full_image_path, blogs_directory)
+            self._image_cache[cache_key] = result
+            return result
 
         # Find the image in various locations
         full_image_path = self._find_image_in_directories(
-            image, rocmblogs.blogs_directory
+            image, blogs_directory
         )
 
         if not full_image_path:
@@ -423,17 +502,23 @@ class Blog:
             if os.path.exists(generic_webp_path):
                 self.image = "generic.webp"
                 self.save_image_path("generic.webp")
-                return pathlib.Path("./images/generic.webp")
+                result = pathlib.Path("./images/generic.webp")
+                self._image_cache[cache_key] = result
+                return result
             else:
                 self.image = "generic.jpg"
                 self.save_image_path("generic.jpg")
-                return pathlib.Path("./images/generic.jpg")
+                result = pathlib.Path("./images/generic.jpg")
+                self._image_cache[cache_key] = result
+                return result
 
         # Save the image path and return the relative path
         image_name = os.path.basename(str(full_image_path))
         self.save_image_path(image_name)
 
-        return self._get_relative_path(full_image_path, rocmblogs.blogs_directory)
+        result = self._get_relative_path(full_image_path, blogs_directory)
+        self._image_cache[cache_key] = result
+        return result
 
     def _find_image_in_directories(
         self, image: str, blogs_directory: str
@@ -441,6 +526,38 @@ class Blog:
         """Search for image in various directories."""
         blog_dir = pathlib.Path(self.file_path).parent
         blogs_dir = pathlib.Path(blogs_directory)
+        manifest = build_image_manifest(blogs_directory)
+        manifest_paths = _image_manifest_paths_cache.get(blogs_directory, set())
+
+        def path_exists(path: pathlib.Path) -> bool:
+            if manifest_paths:
+                path_key = str(path).lower()
+                if path_key in manifest_paths:
+                    return True
+                if path.exists() and path.is_file():
+                    register_image_in_manifest(blogs_directory, path)
+                    return True
+                return False
+            return path.exists() and path.is_file()
+
+        def find_partial_in_manifest(
+            base_name: str, base_dir: pathlib.Path, extension: Optional[str] = None
+        ) -> Optional[pathlib.Path]:
+            if not manifest_paths:
+                return None
+            base_prefix = str(base_dir).lower() + os.sep
+            base_name = base_name.lower()
+            extension = extension.lower() if extension else None
+
+            for name_key, candidates in manifest.items():
+                if extension and not name_key.endswith(extension):
+                    continue
+                if base_name not in name_key:
+                    continue
+                for candidate in candidates:
+                    if candidate.lower().startswith(base_prefix):
+                        return pathlib.Path(candidate)
+            return None
 
         # Check if there's a WebP version of the image
         image_base, image_ext = os.path.splitext(image)
@@ -493,7 +610,7 @@ class Blog:
 
         # Check each path
         for path in search_paths:
-            if path.exists() and path.is_file():
+            if path_exists(path):
                 if str(path).lower().endswith(".webp"):
                     log_message(
                         "info",
@@ -505,6 +622,72 @@ class Blog:
 
         # Try partial matching in the global images directory
         images_dir = blogs_dir / "images"
+        if manifest_paths:
+            webp_base = os.path.splitext(image)[0].lower()
+            manifest_webp = find_partial_in_manifest(webp_base, images_dir, ".webp")
+            if manifest_webp is not None:
+                log_message(
+                    "info",
+                    f"Found WebP version by partial matching: {manifest_webp}",
+                    "general",
+                    "blog",
+                )
+                return manifest_webp
+
+            image_base = os.path.splitext(image)[0].lower()
+            manifest_image = find_partial_in_manifest(image_base, images_dir)
+            if manifest_image is not None:
+                if not str(manifest_image).lower().endswith(".webp"):
+                    try:
+                        with Image.open(manifest_image) as img:
+                            original_width, original_height = img.size
+
+                            webp_img = img
+                            if img.mode not in ("RGB", "RGBA"):
+                                webp_img = img.convert("RGB")
+
+                            if original_width > 1200 or original_height > 700:
+                                scaling_factor = min(
+                                    1200 / original_width, 700 / original_height
+                                )
+
+                                new_width = int(original_width * scaling_factor)
+                                new_height = int(original_height * scaling_factor)
+
+                                webp_img = webp_img.resize(
+                                    (new_width, new_height), resample=Image.LANCZOS
+                                )
+                                log_message(
+                                    "info",
+                                    f"Resized image from {original_width}x{original_height} to {new_width}x{new_height}",
+                                    "general",
+                                    "blog",
+                                )
+
+                            webp_path = (
+                                os.path.splitext(str(manifest_image))[0] + ".webp"
+                            )
+                            webp_img.save(
+                                webp_path, format="WEBP", quality=98, method=6
+                            )
+                            register_image_in_manifest(blogs_directory, webp_path)
+
+                            # Return the WebP version
+                            log_message(
+                                "info",
+                                f"Successfully converted {manifest_image} to WebP: {webp_path}",
+                                "general",
+                                "blog",
+                            )
+                            return pathlib.Path(webp_path)
+                    except Exception as e:
+                        log_message(
+                            "warning",
+                            f"Failed to convert {manifest_image} to WebP: {e}",
+                        )
+
+                return manifest_image
+
         if images_dir.exists():
             webp_base = os.path.splitext(image)[0].lower()
             for img_file in images_dir.glob("*.webp"):
@@ -553,6 +736,7 @@ class Blog:
                                 webp_img.save(
                                     webp_path, format="WEBP", quality=98, method=6
                                 )
+                                register_image_in_manifest(blogs_directory, webp_path)
 
                                 # Return the WebP version
                                 log_message(
@@ -575,12 +759,18 @@ class Blog:
         self, full_path: pathlib.Path, base_dir: str
     ) -> pathlib.Path:
         """Convert an absolute path to a relative path."""
+        cache_key = f"{full_path}|{base_dir}"
+        cached_path = _relative_path_cache.get(cache_key)
+        if cached_path:
+            return pathlib.Path(cached_path)
+
         relative_path = os.path.relpath(str(full_path), str(base_dir))
         relative_path = relative_path.replace("\\", "/")
 
         if not relative_path.startswith("./"):
             relative_path = "./" + relative_path
 
+        _relative_path_cache[cache_key] = relative_path
         return pathlib.Path(relative_path)
 
     def __repr__(self) -> str:

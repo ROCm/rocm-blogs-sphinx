@@ -14,7 +14,13 @@ from datetime import datetime
 from functools import wraps
 from pathlib import Path
 
+try:
+    import sphinx
+except Exception:
+    sphinx = None
+
 from .._version import __version__ as PROJECT_VERSION
+from ..logger.logger import log_message
 
 # Project Information
 PROJECT_NAME = "ROCm Blogs Sphinx Extension"
@@ -44,6 +50,10 @@ def create_universal_log():
     global _current_log_file
 
     try:
+        sphinx_version = (
+            getattr(sphinx, "__version__", "unknown") if sphinx else "unknown"
+        )
+
         logs_dir = Path("logs")
         logs_dir.mkdir(exist_ok=True)
 
@@ -66,6 +76,7 @@ Working Directory: {os.getcwd()}
 Python Version: {sys.version.split()[0]}
 Python Executable: {sys.executable}
 Platform: {sys.platform}
+Sphinx Version: {sphinx_version}
 Python Path: {os.environ.get('PYTHONPATH', 'Not set')}
 Environment: {os.environ.get('ENV', 'Not specified')}
 
@@ -79,9 +90,21 @@ Build started at: {datetime.now().isoformat()}
             f.write(header_content)
 
         _current_log_file = str(log_file)
+        log_message(
+            "info",
+            f"Created universal log file at {log_file}",
+            "project_info",
+            "logging",
+        )
         return str(log_file)
 
     except Exception as e:
+        log_message(
+            "warning",
+            f"Could not create universal log file: {e}",
+            "project_info",
+            "logging",
+        )
         print(f"[WARNING] Could not create universal log file: {e}", file=sys.stderr)
         print(f"{PROJECT_NAME} v{PROJECT_VERSION}")
         _current_log_file = None
@@ -100,6 +123,12 @@ def log_project_info(func):
         if log_file_path:
             print(f"Universal log: {log_file_path}")
         print("-" * 50)
+        log_message(
+            "info",
+            f"Starting build for {PROJECT_NAME} v{PROJECT_VERSION}",
+            "project_info",
+            "build",
+        )
 
         start_time = time.time()
 
@@ -118,6 +147,12 @@ def log_project_info(func):
             completion_msg += "=" * 80 + "\n"
 
             safe_write_log(log_file_path, completion_msg)
+            log_message(
+                "info",
+                f"Build completed successfully in {duration:.2f}s",
+                "project_info",
+                "build",
+            )
 
             return result
 
@@ -131,6 +166,12 @@ def log_project_info(func):
             error_msg += "=" * 80 + "\n"
 
             safe_write_log(log_file_path, error_msg)
+            log_message(
+                "error",
+                f"Build failed after {duration:.2f}s: {e}",
+                "project_info",
+                "build",
+            )
 
             print(f"\n[ERROR] Build failed: {e}", file=sys.stderr)
 
@@ -164,7 +205,7 @@ def append_to_universal_log(message: str):
         timestamp = datetime.now().strftime("%H:%M:%S")
         safe_write_log(str(latest_log), f"[{timestamp}] {message}\n")
 
-    except Exception as e:
+    except Exception:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}")
 
 

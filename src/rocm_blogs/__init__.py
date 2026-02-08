@@ -26,32 +26,39 @@ from .process import (_create_pagination_controls, _generate_grid_items,
 sphinx_diagnostics = sphinx_logging.getLogger(__name__)
 
 try:
-    from rocm_blogs_logging import *
+    from rocm_blogs_sphinx_logging import *
 
     LOGGING_AVAILABLE = True
     PROFILING_AVAILABLE = True
 except ImportError:
-    # Fallback if logging package is not available
-    LOGGING_AVAILABLE = False
-    PROFILING_AVAILABLE = False
-    get_logger = lambda *args, **kwargs: None
-    configure_logging = lambda *args, **kwargs: None
-    log_operation = lambda *args, **kwargs: lambda func: func
-    is_logging_enabled = lambda: False
-    profile_operation = lambda *args, **kwargs: lambda func: func
-    profile_function = lambda *args, **kwargs: lambda func: func
-    get_profiler = lambda *args, **kwargs: None
+    try:
+        # Backward compatibility with legacy package name
+        from rocm_blogs_logging import *
 
-    class LogLevel:
-        DEBUG = "DEBUG"
-        INFO = "INFO"
-        WARNING = "WARNING"
-        ERROR = "ERROR"
-        CRITICAL = "CRITICAL"
+        LOGGING_AVAILABLE = True
+        PROFILING_AVAILABLE = True
+    except ImportError:
+        # Fallback if logging package is not available
+        LOGGING_AVAILABLE = False
+        PROFILING_AVAILABLE = False
+        get_logger = lambda *args, **kwargs: None
+        configure_logging = lambda *args, **kwargs: None
+        log_operation = lambda *args, **kwargs: lambda func: func
+        is_logging_enabled = lambda: False
+        profile_operation = lambda *args, **kwargs: lambda func: func
+        profile_function = lambda *args, **kwargs: lambda func: func
+        get_profiler = lambda *args, **kwargs: None
 
-    class LogCategory:
-        SYSTEM = "system"
-        PERFORMANCE = "performance"
+        class LogLevel:
+            DEBUG = "DEBUG"
+            INFO = "INFO"
+            WARNING = "WARNING"
+            ERROR = "ERROR"
+            CRITICAL = "CRITICAL"
+
+        class LogCategory:
+            SYSTEM = "system"
+            PERFORMANCE = "performance"
 
 
 from ._rocmblogs import ROCmBlogs
@@ -3298,7 +3305,22 @@ def update_posts_file(sphinx_app: Sphinx, rocm_blogs: ROCmBlogs) -> None:
                 log_file_handle, "Generating lazy-loaded grid items for all blogs\n"
             )
 
+        grid_generation_start = time.perf_counter()
         all_grid_items = _generate_lazy_loaded_grid_items(rocm_blogs, all_blogs)
+        grid_generation_duration = time.perf_counter() - grid_generation_start
+
+        log_message(
+            "info",
+            f"Generated grid items in {grid_generation_duration:.2f}s",
+            "general",
+            "__init__",
+        )
+
+        if log_file_handle:
+            safe_log_write(
+                log_file_handle,
+                f"Generated grid items in {grid_generation_duration:.2f}s\n",
+            )
 
         # Check if any grid items were generated
         if not all_grid_items:

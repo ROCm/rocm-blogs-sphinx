@@ -11,9 +11,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from ..project.project_info import log_simple_message
-
-
 def log_message(
     level: str,
     message: str,
@@ -65,10 +62,12 @@ def log_message(
     except Exception:
         if level.lower() in ["error", "critical"]:
             try:
+                from ..project.project_info import log_simple_message
+
                 log_simple_message(
                     level, f"[{component}:{operation}] {message}", operation
                 )
-            except ImportError:
+            except Exception:
                 formatted_message = (
                     f"[{level.upper()}] [{component}:{operation}] {message}"
                 )
