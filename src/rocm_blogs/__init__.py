@@ -8,6 +8,7 @@ import importlib.resources as pkg_resources
 import json
 import os
 import pathlib
+import sys
 import threading
 import time
 import traceback
@@ -24,6 +25,22 @@ from .process import (_create_pagination_controls, _generate_grid_items,
                       process_single_blog)
 
 sphinx_diagnostics = sphinx_logging.getLogger(__name__)
+
+
+def _ensure_local_logging_package_on_path() -> None:
+    """Add local rocm-blogs-sphinx-logging src to sys.path if present."""
+    try:
+        repo_root = Path(__file__).resolve().parents[2]
+        candidate = repo_root / "rocm-blogs-sphinx-logging" / "src"
+        if (candidate / "rocm_blogs_sphinx_logging").is_dir():
+            candidate_str = str(candidate)
+            if candidate_str not in sys.path:
+                sys.path.insert(0, candidate_str)
+    except Exception:
+        pass
+
+
+_ensure_local_logging_package_on_path()
 
 try:
     from rocm_blogs_sphinx_logging import *
@@ -79,12 +96,89 @@ __all__ = [
     "grid_generation",
     "metadata_generator",
     "utils",
+    "visualize",
 ]
 
 
 structured_logger = None
+_VISUALIZATION_STARTED = False
+
+
+def _activate_visualization() -> str | None:
+    """Activate offline visualization before logger initialization."""
+    if not LOGGING_AVAILABLE:
+        return None
+    try:
+        is_enabled = (
+            "is_visualization_enabled" in globals()
+            and is_visualization_enabled()
+        )
+        if not is_enabled:
+            return None
+
+        try:
+            from rocm_blogs_sphinx_logging import visualize as _visualize
+        except ImportError:
+            from rocm_blogs_logging import visualize as _visualize
+        return _visualize()
+    except Exception:
+        return None
+
+
+def _activate_visualization_from_app(sphinx_app: Sphinx) -> None:
+    """Activate visualization based on Sphinx config values."""
+    global _VISUALIZATION_STARTED
+    try:
+        if _VISUALIZATION_STARTED:
+            return
+        debug_visualize = bool(
+            getattr(sphinx_app.config, "debug_visualize", False)
+            or getattr(sphinx_app.config, "rocm_blogs_debug_visualize", False)
+        )
+        if not debug_visualize:
+            return
+
+        os.environ["ROCM_BLOGS_DEBUG_VISUALIZE"] = "true"
+
+        try:
+            from rocm_blogs_sphinx_logging import visualize as _visualize
+        except ImportError:
+            try:
+                from rocm_blogs_logging import visualize as _visualize
+            except ImportError:
+                return
+
+        _visualize()
+        _VISUALIZATION_STARTED = True
+    except Exception:
+        return
+
+
+def _finalize_visualization(sphinx_app: Sphinx, build_exception: Exception | None) -> None:
+    """Finalize visualization session at end of build."""
+    try:
+        if not _VISUALIZATION_STARTED:
+            return
+        status = "failed" if build_exception else "completed"
+        try:
+            from rocm_blogs_sphinx_logging.visualization import (
+                VisualizationManager as _VisualizationManager,
+            )
+        except ImportError:
+            try:
+                from rocm_blogs_logging.visualization import (
+                    VisualizationManager as _VisualizationManager,
+                )
+            except ImportError:
+                return
+        _VisualizationManager.finalize(status=status)
+    except Exception:
+        return
+
+
 if LOGGING_AVAILABLE and is_logging_enabled():
     try:
+        _activate_visualization()
         log_file_path = Path("logs/rocm_blogs.log")
         structured_logger = configure_logging(
             level=LogLevel.INFO,
@@ -102,6 +196,20 @@ if LOGGING_AVAILABLE and is_logging_enabled():
     except Exception as logging_error:
         print(f"Failed to initialize structured logging: {logging_error}")
         structured_logger = None
+
+
+def visualize() -> str | None:
+    """Activate local logging visualization for this build session."""
+    if not LOGGING_AVAILABLE:
+        return None
+    try:
+        try:
+            from rocm_blogs_sphinx_logging import visualize as _visualize
+        except ImportError:
+            from rocm_blogs_logging import visualize as _visualize
+        return _visualize()
+    except Exception:
+        return None
 
 
 _CRITICAL_ERROR_OCCURRED = False
@@ -4321,6 +4429,8 @@ def setup(sphinx_app: Sphinx) -> dict:
 
     # Add configuration values for ROCm Blogs extension
     sphinx_app.add_config_value("rocm_blogs_debug", False, "env", [bool])
+    sphinx_app.add_config_value("debug_visualize", False, "env", [bool])
+    sphinx_app.add_config_value("rocm_blogs_debug_visualize", False, "env", [bool])
     sphinx_app.add_config_value("rocm_blogs_log_level", "INFO", "env", [str])
     sphinx_app.add_config_value("rocm_blogs_log_file", None, "env", [str, type(None)])
     sphinx_app.add_config_value(
@@ -4329,6 +4439,29 @@ def setup(sphinx_app: Sphinx) -> dict:
 
     # Initialize logging based on configuration
     _initialize_logging_from_config(sphinx_app)
+
+    # Record debug/visualize status in universal log.
+    try:
+        debug_enabled = getattr(sphinx_app.config, "rocm_blogs_debug", False)
+        debug_visualize = bool(
+            getattr(sphinx_app.config, "debug_visualize", False)
+            or getattr(sphinx_app.config, "rocm_blogs_debug_visualize", False)
+        )
+        append_to_universal_log(
+            f"Debug logging: {'enabled' if debug_enabled else 'disabled'}"
+        )
+        append_to_universal_log(
+            f"Visualization: {'enabled' if debug_visualize else 'disabled'}"
+        )
+    except Exception:
+        pass
+
+    # Trigger visualization immediately when requested via config.
+    _activate_visualization_from_app(sphinx_app)
+
+    # Ensure visualization activates from config once the builder is ready.
+    sphinx_app.connect("builder-inited", _activate_visualization_from_app)
+    sphinx_app.connect("build-finished", _finalize_visualization)
 
     log_message(
         "info",
@@ -4410,6 +4543,10 @@ def _initialize_logging_from_config(sphinx_app: Sphinx) -> None:
         performance_tracking = getattr(
             sphinx_app.config, "rocm_blogs_enable_performance_tracking", False
         )
+        debug_visualize = bool(
+            getattr(sphinx_app.config, "debug_visualize", False)
+            or getattr(sphinx_app.config, "rocm_blogs_debug_visualize", False)
+        )
 
         if debug_enabled:
             os.environ["ROCM_BLOGS_DISABLE_LOGGING"] = "false"
@@ -4428,6 +4565,17 @@ def _initialize_logging_from_config(sphinx_app: Sphinx) -> None:
 
         if not performance_tracking:
             os.environ["ROCM_BLOGS_ENABLE_PERFORMANCE"] = "false"
+
+        if debug_visualize:
+            os.environ["ROCM_BLOGS_DEBUG_VISUALIZE"] = "true"
+        else:
+            os.environ["ROCM_BLOGS_DEBUG_VISUALIZE"] = "false"
+
+        if LOGGING_AVAILABLE and debug_visualize:
+            try:
+                _activate_visualization()
+            except Exception:
+                pass
 
         # Reinitialize the structured logger with new configuration
         if LOGGING_AVAILABLE and debug_enabled:

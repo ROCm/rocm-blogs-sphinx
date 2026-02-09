@@ -2,7 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [v1.13.2] - 2026-02-09
+
+### Fixed
+- Fixed grid thumbnails not appearing by improving hashed image and WebP resolution for grid card images.
 
 ## [v1.13.1] - 2026-02-08
 

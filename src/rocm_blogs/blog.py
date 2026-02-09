@@ -2,6 +2,7 @@
 Blog class for ROCmBlogs package.
 """
 
+import hashlib
 import io
 import json
 import os
@@ -559,6 +560,22 @@ class Blog:
                         return pathlib.Path(candidate)
             return None
 
+        def prefer_hashed_image(path: pathlib.Path) -> pathlib.Path:
+            """Prefer hashed _images variant if it exists."""
+            try:
+                if not blogs_directory:
+                    return path
+                rel_key = os.path.relpath(str(path), blogs_directory).replace("\\", "/")
+                digest = hashlib.md5(rel_key.encode("utf-8")).hexdigest()[:10]
+                name_root, ext = os.path.splitext(path.name)
+                hashed_name = f"{name_root}-{digest}{ext}"
+                hashed_path = blogs_dir / "_images" / hashed_name
+                if hashed_path.exists():
+                    return hashed_path
+            except Exception:
+                pass
+            return path
+
         # Check if there's a WebP version of the image
         image_base, image_ext = os.path.splitext(image)
         webp_image = image_base + ".webp"
@@ -573,6 +590,8 @@ class Blog:
             blog_dir.parent / "images" / webp_image,
             blog_dir.parent / image,
             blog_dir.parent / "images" / image,
+            blogs_dir / "_images" / webp_image,
+            blogs_dir / "_images" / image,
         ]
 
         parent2 = blog_dir.parent.parent
@@ -618,7 +637,7 @@ class Blog:
                         "general",
                         "blog",
                     )
-                return path
+                return prefer_hashed_image(path)
 
         # Try partial matching in the global images directory
         images_dir = blogs_dir / "images"
@@ -632,7 +651,7 @@ class Blog:
                     "general",
                     "blog",
                 )
-                return manifest_webp
+                return prefer_hashed_image(manifest_webp)
 
             image_base = os.path.splitext(image)[0].lower()
             manifest_image = find_partial_in_manifest(image_base, images_dir)
@@ -686,7 +705,31 @@ class Blog:
                             f"Failed to convert {manifest_image} to WebP: {e}",
                         )
 
-                return manifest_image
+                return prefer_hashed_image(manifest_image)
+
+        hashed_dir = blogs_dir / "_images"
+        if manifest_paths:
+            webp_base = os.path.splitext(image)[0].lower()
+            manifest_webp = find_partial_in_manifest(webp_base, hashed_dir, ".webp")
+            if manifest_webp is not None:
+                log_message(
+                    "info",
+                    f"Found hashed WebP by partial matching: {manifest_webp}",
+                    "general",
+                    "blog",
+                )
+                return pathlib.Path(manifest_webp)
+
+            image_base = os.path.splitext(image)[0].lower()
+            manifest_image = find_partial_in_manifest(image_base, hashed_dir)
+            if manifest_image is not None:
+                log_message(
+                    "info",
+                    f"Found hashed image by partial matching: {manifest_image}",
+                    "general",
+                    "blog",
+                )
+                return pathlib.Path(manifest_image)
 
         if images_dir.exists():
             webp_base = os.path.splitext(image)[0].lower()
@@ -698,7 +741,7 @@ class Blog:
                         "general",
                         "blog",
                     )
-                    return img_file
+                    return prefer_hashed_image(img_file)
 
             # If no WebP version found, try to find original image by partial
             # matching
@@ -751,6 +794,29 @@ class Blog:
                                 "warning", f"Failed to convert {img_file} to WebP: {e}"
                             )
 
+                    return img_file
+
+        if hashed_dir.exists():
+            webp_base = os.path.splitext(image)[0].lower()
+            for img_file in hashed_dir.glob("*.webp"):
+                if img_file.is_file() and webp_base in img_file.name.lower():
+                    log_message(
+                        "info",
+                        f"Found hashed WebP by partial matching: {img_file}",
+                        "general",
+                        "blog",
+                    )
+                    return img_file
+
+            image_base = os.path.splitext(image)[0].lower()
+            for img_file in hashed_dir.glob("*"):
+                if img_file.is_file() and image_base in img_file.name.lower():
+                    log_message(
+                        "info",
+                        f"Found hashed image by partial matching: {img_file}",
+                        "general",
+                        "blog",
+                    )
                     return img_file
 
         return None
