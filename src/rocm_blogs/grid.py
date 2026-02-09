@@ -1,5 +1,6 @@
 import hashlib
 import os
+import re
 import shutil
 import time
 from pathlib import Path
@@ -13,6 +14,7 @@ from .logger.logger import *
 _grid_cache: dict[tuple[str, bool, bool], str] = {}
 _grid_image_cache: dict[str, str] = {}
 _grid_image_missing: set[str] = set()
+_HASHED_IMAGE_NAME_RE = re.compile(r".+-[0-9a-f]{10}\.[^.]+$", re.IGNORECASE)
 
 
 def _relative_to_blogs_directory(blogs_directory: str, full_path: str) -> str:
@@ -29,6 +31,11 @@ def _normalize_image_reference(image_str: str) -> str:
     if image_str.startswith("./"):
         return image_str[2:]
     return image_str
+
+
+def _is_hashed_image_reference(image_ref: str) -> bool:
+    """Return True when filename contains the expected hash suffix."""
+    return bool(_HASHED_IMAGE_NAME_RE.match(os.path.basename(image_ref)))
 
 
 def _ensure_generic_image_available(blogs_directory: str) -> str:
@@ -65,12 +72,15 @@ def _ensure_grid_image_available(rocm_blogs, blog, image_str: str) -> str:
     if normalized.startswith(("http://", "https://")):
         return normalized
 
-    if normalized.startswith("_images/"):
-        return normalized
-
     blogs_directory = getattr(rocm_blogs, "blogs_directory", "") or ""
     if not blogs_directory:
         return normalized
+
+    # Keep already hashed _images references as-is.
+    if normalized.startswith("_images/") and _is_hashed_image_reference(normalized):
+        existing_hashed = os.path.join(blogs_directory, normalized)
+        if os.path.exists(existing_hashed):
+            return normalized
 
     if normalized in _grid_image_missing:
         return _ensure_generic_image_available(blogs_directory)
