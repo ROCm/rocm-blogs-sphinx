@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+## [v1.13.3] - 2026-02-09
+
+### Fixed
+- Fixed grid thumbnails still rendering with unhashed `_images/...` paths by enforcing hash conversion unless the `_images` filename is already hash-suffixed.
+
 ## [v1.13.2] - 2026-02-09
 
 ### Fixed
