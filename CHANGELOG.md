@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v1.13.4] - 2026-02-17
+
+### Fixed
+- Normalized market vertical matching to be case-insensitive so blogs tagged as `robotics` (or other mixed-case variants) are correctly grouped under `Robotics` and included in generated vertical pages.
+
 ## [v1.13.3] - 2026-02-09
 
 ### Fixed
