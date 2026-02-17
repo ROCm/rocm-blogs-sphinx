@@ -36,17 +36,9 @@ class BlogHolder:
             "Developers",
             "Robotics",
         ]
-        self._vertical_lookup = {v.casefold(): v for v in self.verticals}
         self._seen_paths: Set[str] = set()
         self._seen_titles: Set[str] = set()
         self._duplicate_count = 0
-
-    def _canonicalize_vertical(self, vertical: str) -> str:
-        """Normalize metadata vertical labels to known canonical values."""
-        normalized = " ".join((vertical or "").split())
-        if not normalized:
-            return ""
-        return self._vertical_lookup.get(normalized.casefold(), normalized)
 
     def _normalize_title(self, title: str) -> str:
         """Normalize title for consistent comparison."""
@@ -771,27 +763,19 @@ class BlogHolder:
                         v.strip() for v in blog_vertical_str.split(",") if v.strip()
                     ]
                     for vertical in blog_vertical:
-                        canonical_vertical = self._canonicalize_vertical(vertical)
-                        if not canonical_vertical:
-                            continue
-                        if (
-                            category,
-                            canonical_vertical,
-                        ) not in self.blogs_categories_verticals:
-                            self.blogs_categories_verticals[
-                                (category, canonical_vertical)
-                            ] = []
+                        if (category, vertical) not in self.blogs_categories_verticals:
+                            self.blogs_categories_verticals[(category, vertical)] = []
                             log_message(
                                 "debug",
-                                f"Initialized vertical-category: {category}, {canonical_vertical}",
+                                f"Initialized vertical-category: {category}, {vertical}",
                             )
 
-                        self.blogs_categories_verticals[
-                            (category, canonical_vertical)
-                        ].append(blog)
+                        self.blogs_categories_verticals[(category, vertical)].append(
+                            blog
+                        )
                         log_message(
                             "debug",
-                            f"Blog '{blog.blog_title}' added to vertical-category '{category}', '{canonical_vertical}'",
+                            f"Blog '{blog.blog_title}' added to vertical-category '{category}', '{vertical}'",
                         )
 
         return list(self.blogs_categories_verticals.values())
@@ -846,20 +830,19 @@ class BlogHolder:
                         v.strip() for v in blog_vertical_str.split(",") if v.strip()
                     ]
                     for vertical in blog_vertical:
-                        canonical_vertical = self._canonicalize_vertical(vertical)
-                        if canonical_vertical not in self.blogs_verticals:
+                        if vertical not in self.blogs_verticals:
                             if log_file_handle:
                                 log_file_handle.write(
                                     f"Vertical '{vertical}' not recognized\n"
                                 )
                             continue
-                        if canonical_vertical not in vertical_counts:
-                            vertical_counts[canonical_vertical] = 0
-                        vertical_counts[canonical_vertical] += 1
-                        self.blogs_verticals[canonical_vertical].append(blog)
+                        if vertical not in vertical_counts:
+                            vertical_counts[vertical] = 0
+                        vertical_counts[vertical] += 1
+                        self.blogs_verticals[vertical].append(blog)
                         if log_file_handle:
                             log_file_handle.write(
-                                f"Blog '{blog.blog_title}' added to vertical '{canonical_vertical}'\n"
+                                f"Blog '{blog.blog_title}' added to vertical '{vertical}'\n"
                             )
 
             if log_file_handle:
