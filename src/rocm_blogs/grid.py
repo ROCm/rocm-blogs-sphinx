@@ -1,4 +1,3 @@
-import hashlib
 import os
 import re
 import shutil
@@ -14,7 +13,6 @@ from .logger.logger import *
 _grid_cache: dict[tuple[str, bool, bool], str] = {}
 _grid_image_cache: dict[str, str] = {}
 _grid_image_missing: set[str] = set()
-_HASHED_IMAGE_NAME_RE = re.compile(r".+-[0-9a-f]{10}\.[^.]+$", re.IGNORECASE)
 
 
 def _relative_to_blogs_directory(blogs_directory: str, full_path: str) -> str:
@@ -33,9 +31,36 @@ def _normalize_image_reference(image_str: str) -> str:
     return image_str
 
 
-def _is_hashed_image_reference(image_ref: str) -> bool:
-    """Return True when filename contains the expected hash suffix."""
-    return bool(_HASHED_IMAGE_NAME_RE.match(os.path.basename(image_ref)))
+def _sanitize_image_output_name(name: str) -> str:
+    """Convert a filename into a filesystem-safe output name."""
+    sanitized = re.sub(r"[^A-Za-z0-9._-]+", "-", name)
+    sanitized = re.sub(r"-{2,}", "-", sanitized).strip("-")
+    return sanitized
+
+
+def _build_output_image_name(blogs_directory: str, source_path: str) -> str:
+    """Build deterministic non-hashed _images filename from source path."""
+    source_name = os.path.basename(source_path) or "image"
+
+    relative_key = str(source_path).replace("\\", "/")
+    try:
+        relative_key = os.path.relpath(str(source_path), blogs_directory).replace(
+            "\\", "/"
+        )
+    except Exception:
+        pass
+
+    if relative_key.startswith("_images/"):
+        relative_key = relative_key[len("_images/") :]
+
+    parts = [part for part in relative_key.split("/") if part not in {"", ".", ".."}]
+    if not parts:
+        parts = [source_name]
+
+    candidate = _sanitize_image_output_name("-".join(parts))
+    if not candidate:
+        candidate = _sanitize_image_output_name(source_name) or source_name
+    return candidate
 
 
 def _ensure_generic_image_available(blogs_directory: str) -> str:
@@ -76,10 +101,10 @@ def _ensure_grid_image_available(rocm_blogs, blog, image_str: str) -> str:
     if not blogs_directory:
         return normalized
 
-    # Keep already hashed _images references as-is.
-    if normalized.startswith("_images/") and _is_hashed_image_reference(normalized):
-        existing_hashed = os.path.join(blogs_directory, normalized)
-        if os.path.exists(existing_hashed):
+    # Keep existing _images references as-is.
+    if normalized.startswith("_images/"):
+        existing_output = os.path.join(blogs_directory, normalized)
+        if os.path.exists(existing_output):
             return normalized
 
     if normalized in _grid_image_missing:
@@ -106,11 +131,7 @@ def _ensure_grid_image_available(rocm_blogs, blog, image_str: str) -> str:
     if cached:
         return cached
 
-    rel_key = _relative_to_blogs_directory(blogs_directory, source_path)
-    digest = hashlib.md5(rel_key.encode("utf-8")).hexdigest()[:10]
-    base_name = os.path.basename(source_path)
-    name_root, ext = os.path.splitext(base_name)
-    dest_name = f"{name_root}-{digest}{ext}"
+    dest_name = _build_output_image_name(blogs_directory, source_path)
     dest_dir = os.path.join(blogs_directory, "_images")
     dest_path = os.path.join(dest_dir, dest_name)
 

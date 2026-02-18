@@ -2,7 +2,6 @@
 Blog class for ROCmBlogs package.
 """
 
-import hashlib
 import io
 import json
 import os
@@ -560,22 +559,6 @@ class Blog:
                         return pathlib.Path(candidate)
             return None
 
-        def prefer_hashed_image(path: pathlib.Path) -> pathlib.Path:
-            """Prefer hashed _images variant if it exists."""
-            try:
-                if not blogs_directory:
-                    return path
-                rel_key = os.path.relpath(str(path), blogs_directory).replace("\\", "/")
-                digest = hashlib.md5(rel_key.encode("utf-8")).hexdigest()[:10]
-                name_root, ext = os.path.splitext(path.name)
-                hashed_name = f"{name_root}-{digest}{ext}"
-                hashed_path = blogs_dir / "_images" / hashed_name
-                if hashed_path.exists():
-                    return hashed_path
-            except Exception:
-                pass
-            return path
-
         # Check if there's a WebP version of the image
         image_base, image_ext = os.path.splitext(image)
         webp_image = image_base + ".webp"
@@ -637,7 +620,7 @@ class Blog:
                         "general",
                         "blog",
                     )
-                return prefer_hashed_image(path)
+                return path
 
         # Try partial matching in the global images directory
         images_dir = blogs_dir / "images"
@@ -651,7 +634,7 @@ class Blog:
                     "general",
                     "blog",
                 )
-                return prefer_hashed_image(manifest_webp)
+                return manifest_webp
 
             image_base = os.path.splitext(image)[0].lower()
             manifest_image = find_partial_in_manifest(image_base, images_dir)
@@ -705,7 +688,7 @@ class Blog:
                             f"Failed to convert {manifest_image} to WebP: {e}",
                         )
 
-                return prefer_hashed_image(manifest_image)
+                return manifest_image
 
         hashed_dir = blogs_dir / "_images"
         if manifest_paths:
@@ -741,7 +724,7 @@ class Blog:
                         "general",
                         "blog",
                     )
-                    return prefer_hashed_image(img_file)
+                    return img_file
 
             # If no WebP version found, try to find original image by partial
             # matching

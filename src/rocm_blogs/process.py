@@ -1,6 +1,5 @@
 import importlib.resources as pkg_resources
 import inspect
-import hashlib
 import json
 import os
 import re
@@ -23,16 +22,20 @@ from .images import *
 from .logger.logger import *
 from .utils import *
 
-_HASHED_IMAGE_NAME_RE = re.compile(r".+-[0-9a-f]{10}\.[^.]+$", re.IGNORECASE)
+def _sanitize_image_output_name(name: str) -> str:
+    """Convert a filename into a filesystem-safe output name."""
+    sanitized = re.sub(r"[^A-Za-z0-9._-]+", "-", name)
+    sanitized = re.sub(r"-{2,}", "-", sanitized).strip("-")
+    return sanitized
 
 
-def _is_hashed_image_filename(filename: str) -> bool:
-    """Check whether filename already contains the expected hash suffix."""
-    return bool(_HASHED_IMAGE_NAME_RE.match(os.path.basename(filename)))
+def _build_output_image_name(
+    blogs_directory: str, source_path: str, extension_override: str | None = None
+) -> str:
+    """Build deterministic non-hashed _images filename from source path."""
+    source = Path(source_path)
+    source_name = source.name or "image"
 
-
-def _build_hashed_image_path(blogs_directory: str, source_path: str) -> str:
-    """Build deterministic hashed _images output path for a source image path."""
     relative_key = str(source_path).replace("\\", "/")
     try:
         relative_key = os.path.relpath(str(source_path), blogs_directory).replace(
@@ -41,15 +44,40 @@ def _build_hashed_image_path(blogs_directory: str, source_path: str) -> str:
     except Exception:
         pass
 
-    source_name = os.path.basename(str(source_path))
-    name_root, extension = os.path.splitext(source_name)
-    digest = hashlib.md5(relative_key.encode("utf-8")).hexdigest()[:10]
-    hashed_name = f"{name_root}-{digest}{extension}"
-    return os.path.join(blogs_directory, "_images", hashed_name)
+    if relative_key.startswith("_images/"):
+        relative_key = relative_key[len("_images/") :]
+
+    parts = [part for part in relative_key.split("/") if part not in {"", ".", ".."}]
+    if not parts:
+        parts = [source_name]
+
+    candidate = _sanitize_image_output_name("-".join(parts))
+    if not candidate:
+        candidate = _sanitize_image_output_name(source_name) or source_name
+
+    if extension_override:
+        override = (
+            extension_override
+            if extension_override.startswith(".")
+            else f".{extension_override}"
+        )
+        root, _ = os.path.splitext(candidate)
+        candidate = f"{root}{override.lower()}"
+
+    return candidate
 
 
-def _ensure_hashed_output_image(blogs_directory: str, source_path: str) -> str:
-    """Ensure image exists under _images with deterministic hashed filename."""
+def _build_output_image_path(
+    blogs_directory: str, source_path: str, extension_override: str | None = None
+) -> str:
+    output_name = _build_output_image_name(
+        blogs_directory, source_path, extension_override
+    )
+    return os.path.join(blogs_directory, "_images", output_name)
+
+
+def _ensure_output_image(blogs_directory: str, source_path: str) -> str:
+    """Ensure image exists under _images using deterministic non-hashed naming."""
     source = Path(source_path)
     if not source.exists() or not source.is_file():
         return str(source_path)
@@ -57,43 +85,49 @@ def _ensure_hashed_output_image(blogs_directory: str, source_path: str) -> str:
     output_dir = Path(blogs_directory) / "_images"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    source_name = source.name
-    if _is_hashed_image_filename(source_name):
-        hashed_path = output_dir / source_name
-        try:
-            if source.resolve() != hashed_path.resolve() and not hashed_path.exists():
-                shutil.copy2(source, hashed_path)
-        except Exception:
-            if not hashed_path.exists():
-                shutil.copy2(source, hashed_path)
-        return str(hashed_path)
-
-    hashed_path = Path(_build_hashed_image_path(blogs_directory, str(source)))
-    if not hashed_path.exists():
-        shutil.copy2(source, hashed_path)
-    return str(hashed_path)
+    output_path = Path(_build_output_image_path(blogs_directory, str(source)))
+    try:
+        if source.resolve() != output_path.resolve() and not output_path.exists():
+            shutil.copy2(source, output_path)
+    except Exception:
+        if not output_path.exists():
+            shutil.copy2(source, output_path)
+    return str(output_path)
 
 
-def _prefer_hashed_image_filename(blogs_directory: str, image_filename: str) -> str:
-    """Prefer hashed _images filename when one exists for the same basename/ext."""
-    filename = os.path.basename(image_filename)
-    if _is_hashed_image_filename(filename):
-        return filename
+def _resolve_blog_image_filename(blogs_directory: str, image_path: str) -> str:
+    """Resolve blog hero image filename using WebP-only _images assets."""
+    filename = os.path.basename(str(image_path))
+    if not filename:
+        return "generic.webp"
 
     output_dir = Path(blogs_directory) / "_images"
     if not output_dir.exists():
-        return filename
+        return f"{os.path.splitext(filename)[0]}.webp"
 
-    stem, extension = os.path.splitext(filename)
-    if not extension:
-        return filename
+    resolved_name = _build_output_image_name(blogs_directory, str(image_path))
+    resolved_stem, _ = os.path.splitext(resolved_name)
+    filename_stem, _ = os.path.splitext(filename)
 
-    pattern = f"{stem}-*{extension}"
-    for candidate in sorted(output_dir.glob(pattern)):
-        if candidate.is_file() and _is_hashed_image_filename(candidate.name):
-            return candidate.name
+    candidates: list[str] = []
+    for candidate in (
+        f"{resolved_stem}.webp",
+        f"{filename_stem}.webp",
+    ):
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
 
-    return filename
+    for candidate in candidates:
+        if (output_dir / candidate).is_file():
+            return candidate
+
+    for pattern in (f"*{resolved_stem}*.webp", f"*{filename_stem}*.webp"):
+        for candidate in sorted(output_dir.glob(pattern)):
+            if candidate.is_file():
+                return candidate.name
+
+    # WebP-only policy: never fall back to non-WebP extensions.
+    return f"{resolved_stem}.webp"
 
 
 def quickshare(blog_entry) -> str:
@@ -1224,9 +1258,12 @@ def process_single_blog(blog_entry, rocm_blogs):
 
                             if os.path.exists(image_path):
                                 # Check if WebP version already exists (created by grid generation)
-                                image_filename = os.path.basename(image_path)
-                                name_without_ext = os.path.splitext(image_filename)[0]
-                                webp_filename = f"{name_without_ext}.webp"
+                                target_webp_destination = _build_output_image_path(
+                                    rocm_blogs.blogs_directory,
+                                    image_path,
+                                    extension_override=".webp",
+                                )
+                                webp_filename = os.path.basename(target_webp_destination)
 
                                 # Check multiple possible locations for WebP version
                                 webp_locations = [
@@ -1246,7 +1283,7 @@ def process_single_blog(blog_entry, rocm_blogs):
                                 ]
 
                                 webp_found = False
-                                webp_destination = None
+                                webp_destination = target_webp_destination
                                 final_image_path = None
 
                                 for webp_location in webp_locations:
@@ -1266,11 +1303,6 @@ def process_single_blog(blog_entry, rocm_blogs):
                                     )
                                 else:
                                     # WebP doesn't exist, create it for consistency with grid
-                                    webp_destination = os.path.join(
-                                        rocm_blogs.blogs_directory,
-                                        "_images",
-                                        webp_filename,
-                                    )
                                     os.makedirs(
                                         os.path.dirname(webp_destination), exist_ok=True
                                     )
@@ -1278,46 +1310,42 @@ def process_single_blog(blog_entry, rocm_blogs):
                                     try:
                                         from .images import convert_to_webp
 
-                                        convert_to_webp(image_path, webp_destination)
-                                        final_image_path = webp_destination
+                                        conversion_success, converted_path = convert_to_webp(
+                                            image_path, webp_destination
+                                        )
+                                        if (
+                                            not conversion_success
+                                            or not converted_path
+                                            or not os.path.exists(converted_path)
+                                        ):
+                                            raise RuntimeError(
+                                                f"WebP conversion failed for {image_path}"
+                                            )
+                                        final_image_path = converted_path
                                         log_message(
                                             "info",
-                                            f"Created WebP version for blog page: {webp_destination}",
+                                            f"Created WebP version for blog page: {converted_path}",
                                             "general",
                                             "process",
                                         )
                                     except Exception as webp_error:
                                         log_message(
                                             "warning",
-                                            f"Failed to convert {image_path} to WebP, using original: {webp_error}",
+                                            f"Failed to convert {image_path} to WebP (no fallback enabled): {webp_error}",
                                             "general",
                                             "process",
                                         )
-                                        # Fall back to copying original file
-                                        original_destination = os.path.join(
-                                            rocm_blogs.blogs_directory,
-                                            "_images",
-                                            image_filename,
-                                        )
-                                        os.makedirs(
-                                            os.path.dirname(original_destination),
-                                            exist_ok=True,
-                                        )
-                                        if not os.path.exists(original_destination):
-                                            shutil.copy2(
-                                                image_path, original_destination
-                                            )
-                                        final_image_path = original_destination
+                                        final_image_path = None
 
                                 if final_image_path and os.path.exists(final_image_path):
-                                    hashed_output = _ensure_hashed_output_image(
+                                    output_image = _ensure_output_image(
                                         rocm_blogs.blogs_directory, final_image_path
                                     )
-                                    blog_entry.image_paths[i] = hashed_output
-                                    if hashed_output != final_image_path:
+                                    blog_entry.image_paths[i] = output_image
+                                    if output_image != final_image_path:
                                         log_message(
                                             "info",
-                                            f"Using hashed output image for blog page: {hashed_output}",
+                                            f"Using output image for blog page: {output_image}",
                                             "general",
                                             "process",
                                         )
@@ -1533,18 +1561,8 @@ def process_single_blog(blog_entry, rocm_blogs):
                     )
 
                     if blog_entry.image_paths:
-                        image_filename = os.path.basename(blog_entry.image_paths[0])
-                        if not image_filename.lower().endswith(".webp"):
-                            base_name, ext = os.path.splitext(image_filename)
-                            image_filename = f"{base_name}.webp"
-                            log_message(
-                                "info",
-                                f"Using WebP version: {image_filename} instead of {blog_entry.image_paths[0]}",
-                                "general",
-                                "process",
-                            )
-                        image_filename = _prefer_hashed_image_filename(
-                            rocm_blogs.blogs_directory, image_filename
+                        image_filename = _resolve_blog_image_filename(
+                            rocm_blogs.blogs_directory, blog_entry.image_paths[0]
                         )
                     else:
                         image_filename = "generic.webp"
@@ -1566,18 +1584,8 @@ def process_single_blog(blog_entry, rocm_blogs):
                         "process",
                     )
                     if blog_entry.image_paths:
-                        image_filename = os.path.basename(blog_entry.image_paths[0])
-                        if not image_filename.lower().endswith(".webp"):
-                            base_name, ext = os.path.splitext(image_filename)
-                            image_filename = f"{base_name}.webp"
-                            log_message(
-                                "info",
-                                f"Using WebP version in fallback: {image_filename} instead of {blog_entry.image_paths[0]}",
-                                "general",
-                                "process",
-                            )
-                        image_filename = _prefer_hashed_image_filename(
-                            rocm_blogs.blogs_directory, image_filename
+                        image_filename = _resolve_blog_image_filename(
+                            rocm_blogs.blogs_directory, blog_entry.image_paths[0]
                         )
                         blog_image_path = f"../../_images/{image_filename}"
                     else:
