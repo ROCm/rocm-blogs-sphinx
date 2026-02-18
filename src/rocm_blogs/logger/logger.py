@@ -6,13 +6,11 @@ and resolve circular dependency issues.
 """
 
 import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
-
-from ..project.project_info import log_simple_message
-
 
 def log_message(
     level: str,
@@ -65,10 +63,12 @@ def log_message(
     except Exception:
         if level.lower() in ["error", "critical"]:
             try:
+                from ..project.project_info import log_simple_message
+
                 log_simple_message(
                     level, f"[{component}:{operation}] {message}", operation
                 )
-            except ImportError:
+            except Exception:
                 formatted_message = (
                     f"[{level.upper()}] [{component}:{operation}] {message}"
                 )
@@ -95,6 +95,51 @@ def create_step_log_file(step_name: str) -> tuple[Optional[str], Optional[Any]]:
         return None, None
 
 
+_SAFE_LOG_LEVEL_RE = re.compile(
+    r"^\s*(CRITICAL|ERROR|TRACEBACK|WARNING|WARN|DEBUG)\b", re.IGNORECASE
+)
+
+
+def _infer_safe_log_level(message: str) -> str:
+    match = _SAFE_LOG_LEVEL_RE.match(message or "")
+    if not match:
+        return "info"
+    token = match.group(1).upper()
+    if token == "CRITICAL":
+        return "critical"
+    if token in ("ERROR", "TRACEBACK"):
+        return "error"
+    if token in ("WARNING", "WARN"):
+        return "warning"
+    if token == "DEBUG":
+        return "debug"
+    return "info"
+
+
+def _infer_safe_log_operation(file_handle: Optional[Any]) -> str:
+    if not file_handle:
+        return "step_log"
+    name = getattr(file_handle, "name", "")
+    if not name:
+        return "step_log"
+    try:
+        stem = Path(str(name)).stem
+    except Exception:
+        return "step_log"
+    parts = stem.split("_")
+    if (
+        len(parts) >= 3
+        and parts[-2].isdigit()
+        and parts[-1].isdigit()
+        and len(parts[-2]) == 8
+        and len(parts[-1]) == 6
+    ):
+        step = "_".join(parts[:-2])
+        if step:
+            return step
+    return stem or "step_log"
+
+
 def safe_log_write(file_handle: Optional[Any], message: str) -> None:
     """Safely write message to log file."""
     if file_handle:
@@ -103,6 +148,34 @@ def safe_log_write(file_handle: Optional[Any], message: str) -> None:
             file_handle.flush()
         except (OSError, IOError):
             pass
+
+    try:
+        current_module = sys.modules.get("rocm_blogs") or sys.modules.get(
+            "src.rocm_blogs"
+        )
+        structured_logger = getattr(current_module, "structured_logger", None)
+        if not structured_logger:
+            return
+
+        operation = _infer_safe_log_operation(file_handle)
+        component = "step_log"
+        level = _infer_safe_log_level(message)
+
+        log_path = getattr(file_handle, "name", None) if file_handle else None
+        extra_data = {"log_source": "safe_log_write"}
+        if log_path:
+            extra_data["log_path"] = str(log_path)
+
+        lines = message.splitlines()
+        if not lines:
+            lines = [message]
+
+        for line in lines:
+            if line == "":
+                continue
+            log_message(level, line, operation, component, extra_data=extra_data)
+    except Exception:
+        pass
 
 
 def safe_log_message(

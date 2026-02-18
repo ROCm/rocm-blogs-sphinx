@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rocm-blogs-sphinx"
-version = "1.13.0"
+version = "1.13.4"
 authors = [
     {name = "Danny Guan", email = "danny.guan@amd.com"}
 ]
@@ -29,9 +29,37 @@ dev = [
     "pytest>=6.0",
     "pytest-cov>=2.0",
     "black>=21.0",
+    "isort>=5.12",
+    "ruff>=0.4.0",
     "flake8>=3.8",
     "mypy>=0.800",
+    "commitizen>=3.0",
 ]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "1.13.4"
+tag_format = "v$version"
+version_files = [
+    "pyproject.toml:version",
+    "src/rocm_blogs/_version.py:__version__",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+skip-string-normalization = false
+
+[tool.isort]
+profile = "black"
+line_length = 88
+known_first_party = ["rocm_blogs"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+select = ["E", "F", "I", "B", "UP"]
+ignore = []
 
 [tool.setuptools]
 include-package-data = true

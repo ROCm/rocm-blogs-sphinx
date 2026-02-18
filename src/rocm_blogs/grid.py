@@ -1,15 +1,142 @@
+import hashlib
 import os
+import re
+import shutil
 import time
 from pathlib import Path
 
 from PIL import Image
 from sphinx.util import logging as sphinx_logging
 
+from .blog import register_image_in_manifest
 from .logger.logger import *
+
+_grid_cache: dict[tuple[str, bool, bool], str] = {}
+_grid_image_cache: dict[str, str] = {}
+_grid_image_missing: set[str] = set()
+_HASHED_IMAGE_NAME_RE = re.compile(r".+-[0-9a-f]{10}\.[^.]+$", re.IGNORECASE)
+
+
+def _relative_to_blogs_directory(blogs_directory: str, full_path: str) -> str:
+    """Convert an absolute path to a blogs-directory-relative path."""
+    try:
+        relative_path = os.path.relpath(full_path, blogs_directory)
+        return relative_path.replace("\\", "/")
+    except Exception:
+        return full_path.replace("\\", "/")
+
+
+def _normalize_image_reference(image_str: str) -> str:
+    """Normalize image reference for consistent path handling."""
+    if image_str.startswith("./"):
+        return image_str[2:]
+    return image_str
+
+
+def _is_hashed_image_reference(image_ref: str) -> bool:
+    """Return True when filename contains the expected hash suffix."""
+    return bool(_HASHED_IMAGE_NAME_RE.match(os.path.basename(image_ref)))
+
+
+def _ensure_generic_image_available(blogs_directory: str) -> str:
+    """Ensure a generic placeholder image exists in _images."""
+    generic_candidates = [
+        os.path.join(blogs_directory, "images", "generic.webp"),
+        os.path.join(blogs_directory, "images", "generic.jpg"),
+        os.path.join(os.path.dirname(__file__), "static", "images", "generic.webp"),
+        os.path.join(os.path.dirname(__file__), "static", "images", "generic.jpg"),
+    ]
+
+    source_path = None
+    for candidate in generic_candidates:
+        if os.path.exists(candidate):
+            source_path = candidate
+            break
+
+    if not source_path:
+        return "images/generic.jpg"
+
+    dest_dir = os.path.join(blogs_directory, "_images")
+    os.makedirs(dest_dir, exist_ok=True)
+    dest_path = os.path.join(dest_dir, os.path.basename(source_path))
+
+    if not os.path.exists(dest_path):
+        shutil.copy2(source_path, dest_path)
+
+    return f"_images/{os.path.basename(dest_path)}"
+
+
+def _ensure_grid_image_available(rocm_blogs, blog, image_str: str) -> str:
+    """Ensure grid images point to a build-safe _images path."""
+    normalized = _normalize_image_reference(image_str)
+    if normalized.startswith(("http://", "https://")):
+        return normalized
+
+    blogs_directory = getattr(rocm_blogs, "blogs_directory", "") or ""
+    if not blogs_directory:
+        return normalized
+
+    # Keep already hashed _images references as-is.
+    if normalized.startswith("_images/") and _is_hashed_image_reference(normalized):
+        existing_hashed = os.path.join(blogs_directory, normalized)
+        if os.path.exists(existing_hashed):
+            return normalized
+
+    if normalized in _grid_image_missing:
+        return _ensure_generic_image_available(blogs_directory)
+
+    source_path = None
+    if os.path.isabs(normalized):
+        source_path = normalized
+    else:
+        candidate = os.path.join(blogs_directory, normalized)
+        if os.path.exists(candidate):
+            source_path = candidate
+        else:
+            blog_dir = os.path.dirname(getattr(blog, "file_path", "") or "")
+            candidate = os.path.join(blog_dir, normalized)
+            if os.path.exists(candidate):
+                source_path = candidate
+
+    if not source_path or not os.path.exists(source_path):
+        _grid_image_missing.add(normalized)
+        return _ensure_generic_image_available(blogs_directory)
+
+    cached = _grid_image_cache.get(source_path)
+    if cached:
+        return cached
+
+    rel_key = _relative_to_blogs_directory(blogs_directory, source_path)
+    digest = hashlib.md5(rel_key.encode("utf-8")).hexdigest()[:10]
+    base_name = os.path.basename(source_path)
+    name_root, ext = os.path.splitext(base_name)
+    dest_name = f"{name_root}-{digest}{ext}"
+    dest_dir = os.path.join(blogs_directory, "_images")
+    dest_path = os.path.join(dest_dir, dest_name)
+
+    os.makedirs(dest_dir, exist_ok=True)
+    if not os.path.exists(dest_path):
+        shutil.copy2(source_path, dest_path)
+
+    result = f"_images/{dest_name}"
+    _grid_image_cache[source_path] = result
+    return result
 
 
 def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
     """Takes a blog and creates a sphinx grid item with WebP image support."""
+    blog_path = getattr(blog, "file_path", "")
+    cache_key = (str(blog_path), bool(lazy_load), bool(use_og))
+    cached_grid = _grid_cache.get(cache_key)
+    if cached_grid is not None:
+        log_message(
+            "debug",
+            f"Grid cache hit for {blog_path} (lazy_load={lazy_load}, use_og={use_og})",
+            "general",
+            "grid",
+        )
+        return cached_grid
+
     grid_start_time = time.time()
 
     log_file_handle = None
@@ -36,20 +163,23 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
         f"Grid generation details - Title: '{blog_title}', Path: '{blog_file_path}', use_og: {use_og}, lazy_load: {lazy_load}\n",
     )
 
+    lazy_load_line = ":img-lazy-load: true" if lazy_load else ""
+
     grid_template = """
 :::{{grid-item-card}}
 :padding: 1
 :img-top: {image}
+:link: {href}
 :class-img-top: small-sd-card-img-top
 :class-body: small-sd-card
 :class: small-sd-card
-:img-lazy-load: true
+{lazy_load_line}
 +++
+<div class="date">{date}</div>
 <a href="{href}" class="small-card-header-link">
     <h2 class="card-header">{title}</h2>
 </a>
 <p class="paragraph">{description}</p>
-<div class="date">{date} {authors_html}</div>
 :::
 """
 
@@ -81,12 +211,6 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
             log_file_handle,
             f"No myst metadata found, using default description. has_myst: {has_myst}, myst_value: {myst_value}\n",
         )
-
-    authors_list = getattr(blog, "author", "").split(",")
-    safe_log_write(
-        log_file_handle,
-        f"Authors list for grid item: {authors_list} (count: {len(authors_list)})\n",
-    )
 
     if use_og:
         safe_log_write(
@@ -310,6 +434,7 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
         ):
             base_name = os.path.splitext(image_str)[0]
             webp_image = base_name + ".webp"
+            image_has_dir = bool(os.path.dirname(image_str))
 
             safe_log_write(
                 log_file_handle,
@@ -323,21 +448,29 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
                 image = webp_image
                 webp_exists = True
                 webp_location = "blogs_directory"
-            elif os.path.exists(
+            elif not image_has_dir and os.path.exists(
                 os.path.join(os.path.dirname(blog.file_path), webp_image)
             ):
-                image = webp_image
+                image = _relative_to_blogs_directory(
+                    ROCmBlogs.blogs_directory,
+                    os.path.join(os.path.dirname(blog.file_path), webp_image),
+                )
                 webp_exists = True
                 webp_location = "blog_directory"
-            elif os.path.exists(
+            elif not image_has_dir and os.path.exists(
                 os.path.join(
                     os.path.dirname(blog.file_path),
                     "images",
                     os.path.basename(webp_image),
                 )
             ):
-                image = os.path.join(
-                    os.path.dirname(image_str), os.path.basename(webp_image)
+                image = _relative_to_blogs_directory(
+                    ROCmBlogs.blogs_directory,
+                    os.path.join(
+                        os.path.dirname(blog.file_path),
+                        "images",
+                        os.path.basename(webp_image),
+                    ),
                 )
                 webp_exists = True
                 webp_location = "blog_images_directory"
@@ -361,14 +494,14 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
                         ROCmBlogs.blogs_directory, image_str
                     )
                     search_locations.append("blogs_directory")
-                elif os.path.exists(
+                elif not image_has_dir and os.path.exists(
                     os.path.join(os.path.dirname(blog.file_path), image_str)
                 ):
                     original_image_path = os.path.join(
                         os.path.dirname(blog.file_path), image_str
                     )
                     search_locations.append("blog_directory")
-                elif os.path.exists(
+                elif not image_has_dir and os.path.exists(
                     os.path.join(
                         os.path.dirname(blog.file_path),
                         "images",
@@ -431,8 +564,13 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
                             webp_img.save(
                                 webp_path, format="WEBP", quality=98, method=6
                             )
+                            register_image_in_manifest(
+                                ROCmBlogs.blogs_directory, webp_path
+                            )
 
-                            image = webp_image
+                            image = _relative_to_blogs_directory(
+                                ROCmBlogs.blogs_directory, webp_path
+                            )
                             safe_log_write(
                                 log_file_handle,
                                 f"REGULAR MODE: Successfully converted to WebP: '{webp_path}' -> using '{webp_image}'\n",
@@ -448,6 +586,7 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
                         f"REGULAR MODE: Could not find original image file for conversion: '{image_str}'\n",
                     )
 
+        image = _ensure_grid_image_available(ROCmBlogs, blog, image)
         safe_log_write(
             log_file_handle, f"REGULAR MODE: Final image for grid item: '{image}'\n"
         )
@@ -470,37 +609,12 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
             )
             href = "#"
 
-    authors_html = ""
-    if authors_list:
-        try:
-            authors_html = blog.grab_authors(authors_list, ROCmBlogs)
-            safe_log_write(
-                log_file_handle,
-                f"Generated authors HTML: '{authors_html}' (count: {len(authors_list)})\n",
-            )
-        except Exception as authors_error:
-            safe_log_write(
-                log_file_handle,
-                f"Error generating authors HTML: {authors_error}, authors_list: {authors_list}\n",
-            )
-
-    if authors_html:
-        authors_html = f"by {authors_html}"
-        safe_log_write(
-            log_file_handle, f"Final authors HTML with prefix: '{authors_html}'\n"
-        )
-    else:
-        safe_log_write(
-            log_file_handle,
-            f"No valid authors found for grid item, authors_list: {authors_list}\n",
-        )
-
     try:
         grid_content = grid_template.format(
             title=title,
             date=date,
             description=description,
-            authors_html=authors_html,
+            lazy_load_line=lazy_load_line,
             image=image,
             href=href,
         )
@@ -550,6 +664,7 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
             except:
                 pass
 
+        _grid_cache[cache_key] = grid_content
         return grid_content
 
     except Exception as template_error:
@@ -559,7 +674,7 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
         )
         safe_log_write(
             log_file_handle,
-            f"Template variables - title: '{title}', date: '{date}', description: '{description[:50]}...', authors_html: '{authors_html}', image: '{image}', href: '{href}'\n",
+            f"Template variables - title: '{title}', date: '{date}', description: '{description[:50]}...', image: '{image}', href: '{href}'\n",
         )
         if log_file_handle:
             try:

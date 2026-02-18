@@ -1,5 +1,6 @@
 import importlib.resources as pkg_resources
 import inspect
+import hashlib
 import json
 import os
 import re
@@ -8,7 +9,7 @@ import threading
 import time
 import traceback
 import yaml
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
@@ -21,6 +22,78 @@ from .grid import *
 from .images import *
 from .logger.logger import *
 from .utils import *
+
+_HASHED_IMAGE_NAME_RE = re.compile(r".+-[0-9a-f]{10}\.[^.]+$", re.IGNORECASE)
+
+
+def _is_hashed_image_filename(filename: str) -> bool:
+    """Check whether filename already contains the expected hash suffix."""
+    return bool(_HASHED_IMAGE_NAME_RE.match(os.path.basename(filename)))
+
+
+def _build_hashed_image_path(blogs_directory: str, source_path: str) -> str:
+    """Build deterministic hashed _images output path for a source image path."""
+    relative_key = str(source_path).replace("\\", "/")
+    try:
+        relative_key = os.path.relpath(str(source_path), blogs_directory).replace(
+            "\\", "/"
+        )
+    except Exception:
+        pass
+
+    source_name = os.path.basename(str(source_path))
+    name_root, extension = os.path.splitext(source_name)
+    digest = hashlib.md5(relative_key.encode("utf-8")).hexdigest()[:10]
+    hashed_name = f"{name_root}-{digest}{extension}"
+    return os.path.join(blogs_directory, "_images", hashed_name)
+
+
+def _ensure_hashed_output_image(blogs_directory: str, source_path: str) -> str:
+    """Ensure image exists under _images with deterministic hashed filename."""
+    source = Path(source_path)
+    if not source.exists() or not source.is_file():
+        return str(source_path)
+
+    output_dir = Path(blogs_directory) / "_images"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    source_name = source.name
+    if _is_hashed_image_filename(source_name):
+        hashed_path = output_dir / source_name
+        try:
+            if source.resolve() != hashed_path.resolve() and not hashed_path.exists():
+                shutil.copy2(source, hashed_path)
+        except Exception:
+            if not hashed_path.exists():
+                shutil.copy2(source, hashed_path)
+        return str(hashed_path)
+
+    hashed_path = Path(_build_hashed_image_path(blogs_directory, str(source)))
+    if not hashed_path.exists():
+        shutil.copy2(source, hashed_path)
+    return str(hashed_path)
+
+
+def _prefer_hashed_image_filename(blogs_directory: str, image_filename: str) -> str:
+    """Prefer hashed _images filename when one exists for the same basename/ext."""
+    filename = os.path.basename(image_filename)
+    if _is_hashed_image_filename(filename):
+        return filename
+
+    output_dir = Path(blogs_directory) / "_images"
+    if not output_dir.exists():
+        return filename
+
+    stem, extension = os.path.splitext(filename)
+    if not extension:
+        return filename
+
+    pattern = f"{stem}-*{extension}"
+    for candidate in sorted(output_dir.glob(pattern)):
+        if candidate.is_file() and _is_hashed_image_filename(candidate.name):
+            return candidate.name
+
+    return filename
 
 
 def quickshare(blog_entry) -> str:
@@ -861,6 +934,7 @@ def _generate_grid_items(
 def _generate_lazy_loaded_grid_items(rocm_blogs, blog_list):
     """Generate grid items with lazy loading and thread-safe deduplication."""
     try:
+        generation_start_time = time.perf_counter()
         lazy_grid_items = []
         error_count = 0
         seen_paths = set()
@@ -893,6 +967,11 @@ def _generate_lazy_loaded_grid_items(rocm_blogs, blog_list):
             "process",
         )
 
+        total_blogs = len(deduplicated_blog_list)
+        if total_blogs == 0:
+            log_message("warning", "No blogs available after deduplication", "general", "process")
+            return []
+
         # Check if lazy_load parameter is supported
         grid_params = inspect.signature(generate_grid).parameters
         if "lazy_load" not in grid_params:
@@ -911,10 +990,66 @@ def _generate_lazy_loaded_grid_items(rocm_blogs, blog_list):
                 skip_used=False,
             )
 
+        def resolve_grid_workers(total: int) -> int:
+            env_value = os.environ.get("ROCM_BLOGS_GRID_WORKERS", "").strip()
+            if env_value:
+                try:
+                    configured = int(env_value)
+                    if configured > 0:
+                        return configured
+                except ValueError:
+                    log_message(
+                        "warning",
+                        f"Invalid ROCM_BLOGS_GRID_WORKERS value: {env_value}, falling back to auto sizing",
+                        "general",
+                        "process",
+                    )
+
+            cpu_count = os.cpu_count() or 1
+            if total < 10:
+                return min(4, cpu_count)
+            if total < 50:
+                return min(8, cpu_count)
+            return max(1, cpu_count)
+
         # Generate grid items with lazy loading
-        for blog_entry in deduplicated_blog_list:
+        max_workers = resolve_grid_workers(total_blogs)
+        log_message(
+            "info",
+            f"Generating grid items with {max_workers} worker(s)",
+            "general",
+            "process",
+        )
+
+        durations = []
+        grid_results = [None] * total_blogs
+
+        def build_grid_item(index: int, blog_entry):
+            start_time = time.perf_counter()
             try:
                 grid_html = generate_grid(rocm_blogs, blog_entry, lazy_load=True)
+                duration = time.perf_counter() - start_time
+                return index, blog_entry, grid_html, duration, None
+            except Exception as blog_error:
+                duration = time.perf_counter() - start_time
+                return index, blog_entry, None, duration, blog_error
+
+        if max_workers <= 1:
+            for index, blog_entry in enumerate(deduplicated_blog_list):
+                result = build_grid_item(index, blog_entry)
+                index, blog_entry, grid_html, duration, blog_error = result
+                durations.append((duration, blog_entry))
+
+                if blog_error:
+                    error_count += 1
+                    log_message(
+                        "error",
+                        f"Error generating grid item for {getattr(blog_entry, 'blog_title', 'Unknown')}: {blog_error}",
+                        "general",
+                        "process",
+                    )
+                    continue
+
                 if not grid_html or not grid_html.strip():
                     error_count += 1
                     log_message(
@@ -925,8 +1060,7 @@ def _generate_lazy_loaded_grid_items(rocm_blogs, blog_list):
                     )
                     continue
 
-                # Validate that grid result contains meaningful content
-                if len(grid_html.strip()) < 50:  # Minimum meaningful grid content size
+                if len(grid_html.strip()) < 50:
                     error_count += 1
                     log_message(
                         "debug",
@@ -936,19 +1070,79 @@ def _generate_lazy_loaded_grid_items(rocm_blogs, blog_list):
                     )
                     continue
 
-                lazy_grid_items.append(grid_html)
-            except Exception as blog_error:
-                error_count += 1
-                log_message(
-                    "error",
-                    f"Error generating grid item for {getattr(blog_entry, 'blog_title', 'Unknown')}: {blog_error}",
-                    "general",
-                    "process",
-                )
+                grid_results[index] = grid_html
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_index = {
+                    executor.submit(build_grid_item, index, blog_entry): (index, blog_entry)
+                    for index, blog_entry in enumerate(deduplicated_blog_list)
+                }
+
+                for future in as_completed(future_to_index):
+                    index, blog_entry = future_to_index[future]
+                    try:
+                        index, blog_entry, grid_html, duration, blog_error = future.result()
+                    except Exception as unexpected_error:
+                        error_count += 1
+                        log_message(
+                            "error",
+                            f"Unexpected error generating grid item for {getattr(blog_entry, 'blog_title', 'Unknown')}: {unexpected_error}",
+                            "general",
+                            "process",
+                        )
+                        continue
+
+                    durations.append((duration, blog_entry))
+
+                    if blog_error:
+                        error_count += 1
+                        log_message(
+                            "error",
+                            f"Error generating grid item for {getattr(blog_entry, 'blog_title', 'Unknown')}: {blog_error}",
+                            "general",
+                            "process",
+                        )
+                        continue
+
+                    if not grid_html or not grid_html.strip():
+                        error_count += 1
+                        log_message(
+                            "debug",
+                            f"Empty grid HTML for blog: {getattr(blog_entry, 'blog_title', 'Unknown')}",
+                            "general",
+                            "process",
+                        )
+                        continue
+
+                    if len(grid_html.strip()) < 50:
+                        error_count += 1
+                        log_message(
+                            "debug",
+                            f"Grid HTML too small for blog: {getattr(blog_entry, 'blog_title', 'Unknown')} (length: {len(grid_html.strip())})",
+                            "general",
+                            "process",
+                        )
+                        continue
+
+                    grid_results[index] = grid_html
+
+        lazy_grid_items = [item for item in grid_results if item]
 
         if not lazy_grid_items:
             log_message("warning", "No grid items generated", "general", "process")
             return []
+
+        total_duration = time.perf_counter() - generation_start_time
+        if durations:
+            avg_duration = sum(duration for duration, _ in durations) / len(durations)
+            max_duration, max_blog = max(durations, key=lambda item: item[0])
+            log_message(
+                "info",
+                f"Grid generation timing: {len(durations)} items in {total_duration:.2f}s "
+                f"(avg {avg_duration:.3f}s, max {max_duration:.3f}s for {getattr(max_blog, 'blog_title', 'Unknown')})",
+                "general",
+                "process",
+            )
 
         if error_count > 0:
             log_message(
@@ -1053,6 +1247,7 @@ def process_single_blog(blog_entry, rocm_blogs):
 
                                 webp_found = False
                                 webp_destination = None
+                                final_image_path = None
 
                                 for webp_location in webp_locations:
                                     if os.path.exists(webp_location):
@@ -1062,7 +1257,7 @@ def process_single_blog(blog_entry, rocm_blogs):
 
                                 if webp_found:
                                     # Use existing WebP version
-                                    blog_entry.image_paths[i] = webp_destination
+                                    final_image_path = webp_destination
                                     log_message(
                                         "info",
                                         f"Using existing WebP version: {webp_destination}",
@@ -1084,7 +1279,7 @@ def process_single_blog(blog_entry, rocm_blogs):
                                         from .images import convert_to_webp
 
                                         convert_to_webp(image_path, webp_destination)
-                                        blog_entry.image_paths[i] = webp_destination
+                                        final_image_path = webp_destination
                                         log_message(
                                             "info",
                                             f"Created WebP version for blog page: {webp_destination}",
@@ -1112,7 +1307,22 @@ def process_single_blog(blog_entry, rocm_blogs):
                                             shutil.copy2(
                                                 image_path, original_destination
                                             )
-                                        blog_entry.image_paths[i] = original_destination
+                                        final_image_path = original_destination
+
+                                if final_image_path and os.path.exists(final_image_path):
+                                    hashed_output = _ensure_hashed_output_image(
+                                        rocm_blogs.blogs_directory, final_image_path
+                                    )
+                                    blog_entry.image_paths[i] = hashed_output
+                                    if hashed_output != final_image_path:
+                                        log_message(
+                                            "info",
+                                            f"Using hashed output image for blog page: {hashed_output}",
+                                            "general",
+                                            "process",
+                                        )
+                                elif final_image_path:
+                                    blog_entry.image_paths[i] = final_image_path
 
                         except Exception as img_error:
                             log_message(
@@ -1333,6 +1543,9 @@ def process_single_blog(blog_entry, rocm_blogs):
                                 "general",
                                 "process",
                             )
+                        image_filename = _prefer_hashed_image_filename(
+                            rocm_blogs.blogs_directory, image_filename
+                        )
                     else:
                         image_filename = "generic.webp"
 
@@ -1363,6 +1576,9 @@ def process_single_blog(blog_entry, rocm_blogs):
                                 "general",
                                 "process",
                             )
+                        image_filename = _prefer_hashed_image_filename(
+                            rocm_blogs.blogs_directory, image_filename
+                        )
                         blog_image_path = f"../../_images/{image_filename}"
                     else:
                         blog_image_path = "../../_images/generic.webp"
