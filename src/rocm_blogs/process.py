@@ -96,24 +96,23 @@ def _ensure_output_image(blogs_directory: str, source_path: str) -> str:
 
 
 def _resolve_blog_image_filename(blogs_directory: str, image_path: str) -> str:
-    """Resolve blog hero image filename by preferring existing _images assets."""
+    """Resolve blog hero image filename using WebP-only _images assets."""
     filename = os.path.basename(str(image_path))
     if not filename:
         return "generic.webp"
 
     output_dir = Path(blogs_directory) / "_images"
     if not output_dir.exists():
-        return filename
+        return f"{os.path.splitext(filename)[0]}.webp"
 
     resolved_name = _build_output_image_name(blogs_directory, str(image_path))
     resolved_stem, _ = os.path.splitext(resolved_name)
+    filename_stem, _ = os.path.splitext(filename)
 
     candidates: list[str] = []
     for candidate in (
         f"{resolved_stem}.webp",
-        resolved_name,
-        f"{os.path.splitext(filename)[0]}.webp",
-        filename,
+        f"{filename_stem}.webp",
     ):
         if candidate and candidate not in candidates:
             candidates.append(candidate)
@@ -122,14 +121,13 @@ def _resolve_blog_image_filename(blogs_directory: str, image_path: str) -> str:
         if (output_dir / candidate).is_file():
             return candidate
 
-    webp_candidates = sorted(
-        output_dir.glob(f"*{os.path.splitext(filename)[0]}*.webp")
-    )
-    for candidate in webp_candidates:
-        if candidate.is_file():
-            return candidate.name
+    for pattern in (f"*{resolved_stem}*.webp", f"*{filename_stem}*.webp"):
+        for candidate in sorted(output_dir.glob(pattern)):
+            if candidate.is_file():
+                return candidate.name
 
-    return filename
+    # WebP-only policy: never fall back to non-WebP extensions.
+    return f"{resolved_stem}.webp"
 
 
 def quickshare(blog_entry) -> str:
@@ -1312,34 +1310,32 @@ def process_single_blog(blog_entry, rocm_blogs):
                                     try:
                                         from .images import convert_to_webp
 
-                                        convert_to_webp(image_path, webp_destination)
-                                        final_image_path = webp_destination
+                                        conversion_success, converted_path = convert_to_webp(
+                                            image_path, webp_destination
+                                        )
+                                        if (
+                                            not conversion_success
+                                            or not converted_path
+                                            or not os.path.exists(converted_path)
+                                        ):
+                                            raise RuntimeError(
+                                                f"WebP conversion failed for {image_path}"
+                                            )
+                                        final_image_path = converted_path
                                         log_message(
                                             "info",
-                                            f"Created WebP version for blog page: {webp_destination}",
+                                            f"Created WebP version for blog page: {converted_path}",
                                             "general",
                                             "process",
                                         )
                                     except Exception as webp_error:
                                         log_message(
                                             "warning",
-                                            f"Failed to convert {image_path} to WebP, using original: {webp_error}",
+                                            f"Failed to convert {image_path} to WebP (no fallback enabled): {webp_error}",
                                             "general",
                                             "process",
                                         )
-                                        # Fall back to copying original file
-                                        original_destination = _build_output_image_path(
-                                            rocm_blogs.blogs_directory, image_path
-                                        )
-                                        os.makedirs(
-                                            os.path.dirname(original_destination),
-                                            exist_ok=True,
-                                        )
-                                        if not os.path.exists(original_destination):
-                                            shutil.copy2(
-                                                image_path, original_destination
-                                            )
-                                        final_image_path = original_destination
+                                        final_image_path = None
 
                                 if final_image_path and os.path.exists(final_image_path):
                                     output_image = _ensure_output_image(

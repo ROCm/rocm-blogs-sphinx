@@ -25,10 +25,18 @@ WEBP_CONVERSION_STATISTICS = {
 }
 
 
-def convert_to_webp(source_image_path):
-    """Convert an image to WebP format with proper resizing."""
+def convert_to_webp(source_image_path, destination_image_path=None):
+    """Convert an image to WebP format with proper resizing.
+
+    If ``destination_image_path`` is provided, write the converted WebP to that
+    path. Otherwise, write next to the source image using the same basename.
+    """
     source_image_filename = os.path.basename(source_image_path)
-    webp_image_path = os.path.splitext(source_image_path)[0] + ".webp"
+    webp_image_path = (
+        destination_image_path
+        if destination_image_path
+        else os.path.splitext(source_image_path)[0] + ".webp"
+    )
 
     if not os.path.exists(source_image_path):
         log_message("warning", f"Image file not found: {source_image_path}")
@@ -42,19 +50,30 @@ def convert_to_webp(source_image_path):
         )
         return False, None
 
-    # Skip conversion for .gif files (and other excluded extensions)
+    # WebP-only policy: do not fall back to excluded non-WebP formats.
     if file_extension.lower() in EXCLUDED_EXTENSIONS:
         log_message(
-            "info",
-            "Skipping WebP conversion for excluded image format: {file_extension} for {source_image_path}",
+            "warning",
+            f"Excluded image format cannot be used for WebP-only output: {source_image_path}",
             "general",
             "images",
         )
-        return True, source_image_path
+        return False, None
 
     if file_extension.lower() == ".webp":
+        if destination_image_path:
+            try:
+                if os.path.abspath(source_image_path) != os.path.abspath(webp_image_path):
+                    shutil.copy2(source_image_path, webp_image_path)
+                    return True, webp_image_path
+            except Exception as copy_error:
+                log_message("warning", f"Error copying existing WebP image: {copy_error}")
         log_message("debug", f"Image is already in WebP format: {source_image_path}")
         return True, source_image_path
+
+    destination_dir = os.path.dirname(webp_image_path)
+    if destination_dir:
+        os.makedirs(destination_dir, exist_ok=True)
 
     if os.path.exists(webp_image_path):
         log_message("debug", f"WebP version already exists: {webp_image_path}")
