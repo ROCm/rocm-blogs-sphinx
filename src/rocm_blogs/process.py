@@ -96,6 +96,64 @@ def _prefer_hashed_image_filename(blogs_directory: str, image_filename: str) -> 
     return filename
 
 
+def _resolve_blog_image_filename(blogs_directory: str, image_path: str) -> str:
+    """Resolve blog hero image filename by preferring existing hashed assets."""
+    filename = os.path.basename(str(image_path))
+    if not filename:
+        return "generic.webp"
+
+    output_dir = Path(blogs_directory) / "_images"
+    if not output_dir.exists():
+        return filename
+
+    stem, extension = os.path.splitext(filename)
+    extension = extension.lower()
+
+    def append_unique(candidates: list[str], candidate: str) -> None:
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+
+    base_candidates: list[str] = []
+    if extension and extension != ".webp":
+        append_unique(base_candidates, f"{stem}.webp")
+    append_unique(base_candidates, filename)
+
+    hashed_candidates: list[str] = []
+    direct_candidates: list[str] = []
+
+    for candidate in base_candidates:
+        candidate_name = os.path.basename(candidate)
+        if _is_hashed_image_filename(candidate_name):
+            append_unique(hashed_candidates, candidate_name)
+            continue
+
+        preferred_hashed = _prefer_hashed_image_filename(
+            blogs_directory, candidate_name
+        )
+        if preferred_hashed != candidate_name:
+            append_unique(hashed_candidates, preferred_hashed)
+        append_unique(direct_candidates, candidate_name)
+
+    for candidate in hashed_candidates + direct_candidates:
+        if (output_dir / candidate).is_file():
+            return candidate
+
+    if not _is_hashed_image_filename(filename):
+        hashed_pattern = sorted(output_dir.glob(f"{stem}-*"))
+        for candidate in hashed_pattern:
+            if (
+                candidate.is_file()
+                and _is_hashed_image_filename(candidate.name)
+                and candidate.suffix.lower() == ".webp"
+            ):
+                return candidate.name
+        for candidate in hashed_pattern:
+            if candidate.is_file() and _is_hashed_image_filename(candidate.name):
+                return candidate.name
+
+    return filename
+
+
 def quickshare(blog_entry) -> str:
     """Generate social media sharing buttons for a blog post."""
     try:
@@ -1533,18 +1591,8 @@ def process_single_blog(blog_entry, rocm_blogs):
                     )
 
                     if blog_entry.image_paths:
-                        image_filename = os.path.basename(blog_entry.image_paths[0])
-                        if not image_filename.lower().endswith(".webp"):
-                            base_name, ext = os.path.splitext(image_filename)
-                            image_filename = f"{base_name}.webp"
-                            log_message(
-                                "info",
-                                f"Using WebP version: {image_filename} instead of {blog_entry.image_paths[0]}",
-                                "general",
-                                "process",
-                            )
-                        image_filename = _prefer_hashed_image_filename(
-                            rocm_blogs.blogs_directory, image_filename
+                        image_filename = _resolve_blog_image_filename(
+                            rocm_blogs.blogs_directory, blog_entry.image_paths[0]
                         )
                     else:
                         image_filename = "generic.webp"
@@ -1566,18 +1614,8 @@ def process_single_blog(blog_entry, rocm_blogs):
                         "process",
                     )
                     if blog_entry.image_paths:
-                        image_filename = os.path.basename(blog_entry.image_paths[0])
-                        if not image_filename.lower().endswith(".webp"):
-                            base_name, ext = os.path.splitext(image_filename)
-                            image_filename = f"{base_name}.webp"
-                            log_message(
-                                "info",
-                                f"Using WebP version in fallback: {image_filename} instead of {blog_entry.image_paths[0]}",
-                                "general",
-                                "process",
-                            )
-                        image_filename = _prefer_hashed_image_filename(
-                            rocm_blogs.blogs_directory, image_filename
+                        image_filename = _resolve_blog_image_filename(
+                            rocm_blogs.blogs_directory, blog_entry.image_paths[0]
                         )
                         blog_image_path = f"../../_images/{image_filename}"
                     else:
