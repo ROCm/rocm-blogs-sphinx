@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Removed hash-based image filename rewriting and aligned grid/blog page image resolution to deterministic non-hashed `_images` paths so both surfaces reference the same generated asset.
+
 ## [v1.13.3] - 2026-02-09
 
 ### Fixed
