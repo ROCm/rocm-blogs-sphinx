@@ -144,6 +144,39 @@ def _ensure_grid_image_available(rocm_blogs, blog, image_str: str) -> str:
     return result
 
 
+def _to_author_card_image_url(rocm_blogs, blog, image_reference: str) -> str:
+    """Resolve an image reference and return an absolute author-card image URL."""
+    resolved = _ensure_grid_image_available(rocm_blogs, blog, image_reference)
+    if resolved.startswith(("http://", "https://")):
+        return resolved
+    resolved = resolved.lstrip("./").replace("\\", "/")
+    return f"https://rocm.blogs.amd.com/{resolved}"
+
+
+def _extract_internal_rocm_image_path(image_url: str) -> str | None:
+    """Extract internal site image path from an image URL/reference."""
+    if not isinstance(image_url, str):
+        return None
+
+    normalized = image_url.strip()
+    if not normalized:
+        return None
+
+    if normalized.startswith(("https://rocm.blogs.amd.com/", "http://rocm.blogs.amd.com/")):
+        normalized = normalized.split("://", 1)[-1]
+        if "/" in normalized:
+            normalized = normalized.split("/", 1)[1]
+        else:
+            normalized = ""
+    elif normalized.startswith("/"):
+        normalized = normalized[1:]
+
+    normalized = normalized.split("?", 1)[0].split("#", 1)[0]
+    if normalized.startswith(("_images/", "images/")):
+        return normalized
+    return None
+
+
 def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
     """Takes a blog and creates a sphinx grid item with WebP image support."""
     blog_path = getattr(blog, "file_path", "")
@@ -258,20 +291,7 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
                 try:
                     regular_image = blog.grab_image(ROCmBlogs)
                     image_str = str(regular_image)
-                    if image_str.startswith("./"):
-                        image_str = image_str[2:]
-                    image_str = image_str.replace("\\", "/")
-
-                    image_filename = os.path.basename(image_str)
-                    if image_filename.lower().endswith((".jpg", ".jpeg", ".png")):
-                        base_name = os.path.splitext(image_filename)[0]
-                        image_filename = f"{base_name}.webp"
-                        safe_log_write(
-                            log_file_handle,
-                            f"AUTHOR PAGE: Converted image filename to WebP: '{image_filename}'\n",
-                        )
-
-                    image = f"https://rocm.blogs.amd.com/_images/{image_filename}"
+                    image = _to_author_card_image_url(ROCmBlogs, blog, image_str)
                     safe_log_write(
                         log_file_handle,
                         f"AUTHOR PAGE: Using fallback image: '{image}' for blog: '{title}'\n",
@@ -284,6 +304,29 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
                     image = "https://rocm.blogs.amd.com/_images/generic.webp"
             else:
                 image = og_image
+                internal_image_path = _extract_internal_rocm_image_path(og_image)
+                if internal_image_path:
+                    internal_full_path = os.path.join(
+                        ROCmBlogs.blogs_directory, internal_image_path
+                    )
+                    if not os.path.exists(internal_full_path):
+                        safe_log_write(
+                            log_file_handle,
+                            f"AUTHOR PAGE: OpenGraph image not found on disk ('{internal_image_path}'), resolving via regular image pipeline\n",
+                        )
+                        try:
+                            regular_image = blog.grab_image(ROCmBlogs)
+                            image = _to_author_card_image_url(
+                                ROCmBlogs, blog, str(regular_image)
+                            )
+                        except Exception as fallback_error:
+                            safe_log_write(
+                                log_file_handle,
+                                f"AUTHOR PAGE: Error resolving fallback image for missing OpenGraph asset: {fallback_error}\n",
+                            )
+                            image = "https://rocm.blogs.amd.com/_images/generic.webp"
+                elif not str(og_image).startswith(("http://", "https://")):
+                    image = _to_author_card_image_url(ROCmBlogs, blog, str(og_image))
         except Exception as og_image_error:
             safe_log_write(
                 log_file_handle,
