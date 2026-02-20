@@ -64,7 +64,7 @@ def _build_output_image_name(blogs_directory: str, source_path: str) -> str:
 
 
 def _ensure_generic_image_available(blogs_directory: str) -> str:
-    """Ensure a generic placeholder image exists in _images."""
+    """Ensure a generic placeholder WebP image exists in _images."""
     generic_candidates = [
         os.path.join(blogs_directory, "images", "generic.webp"),
         os.path.join(blogs_directory, "images", "generic.jpg"),
@@ -79,16 +79,35 @@ def _ensure_generic_image_available(blogs_directory: str) -> str:
             break
 
     if not source_path:
-        return "images/generic.jpg"
+        return "_images/generic.webp"
 
     dest_dir = os.path.join(blogs_directory, "_images")
     os.makedirs(dest_dir, exist_ok=True)
-    dest_path = os.path.join(dest_dir, os.path.basename(source_path))
+    if source_path.lower().endswith(".webp"):
+        dest_path = os.path.join(dest_dir, os.path.basename(source_path))
+        if not os.path.exists(dest_path):
+            shutil.copy2(source_path, dest_path)
+        return f"_images/{os.path.basename(dest_path)}"
 
-    if not os.path.exists(dest_path):
-        shutil.copy2(source_path, dest_path)
+    generic_webp_path = os.path.join(dest_dir, "generic.webp")
+    if not os.path.exists(generic_webp_path):
+        try:
+            from .images import convert_to_webp
 
-    return f"_images/{os.path.basename(dest_path)}"
+            success, converted_path = convert_to_webp(source_path, generic_webp_path)
+            if not success or not converted_path or not os.path.exists(converted_path):
+                raise RuntimeError(f"WebP conversion failed for generic image: {source_path}")
+        except Exception:
+            # Final safeguard to keep links WebP-only even if utility conversion fails.
+            with Image.open(source_path) as generic_image:
+                webp_image = (
+                    generic_image
+                    if generic_image.mode in ("RGB", "RGBA")
+                    else generic_image.convert("RGB")
+                )
+                webp_image.save(generic_webp_path, format="WEBP", quality=90, method=6)
+
+    return "_images/generic.webp"
 
 
 def _ensure_grid_image_available(rocm_blogs, blog, image_str: str) -> str:
@@ -127,6 +146,27 @@ def _ensure_grid_image_available(rocm_blogs, blog, image_str: str) -> str:
         _grid_image_missing.add(normalized)
         return _ensure_generic_image_available(blogs_directory)
 
+    webp_source_path = source_path
+    if not source_path.lower().endswith(".webp"):
+        candidate_webp = os.path.splitext(source_path)[0] + ".webp"
+        if os.path.exists(candidate_webp):
+            webp_source_path = candidate_webp
+        else:
+            try:
+                from .images import convert_to_webp
+
+                success, converted_path = convert_to_webp(source_path, candidate_webp)
+                if success and converted_path and os.path.exists(converted_path):
+                    webp_source_path = converted_path
+                else:
+                    _grid_image_missing.add(normalized)
+                    return _ensure_generic_image_available(blogs_directory)
+            except Exception:
+                _grid_image_missing.add(normalized)
+                return _ensure_generic_image_available(blogs_directory)
+
+    source_path = webp_source_path
+
     cached = _grid_image_cache.get(source_path)
     if cached:
         return cached
@@ -142,6 +182,51 @@ def _ensure_grid_image_available(rocm_blogs, blog, image_str: str) -> str:
     result = f"_images/{dest_name}"
     _grid_image_cache[source_path] = result
     return result
+
+
+def _to_author_card_image_url(rocm_blogs, blog, image_reference: str) -> str:
+    """Resolve an image reference and return an absolute author-card image URL."""
+    resolved = _ensure_grid_image_available(rocm_blogs, blog, image_reference)
+    if resolved.startswith(("http://", "https://")):
+        return resolved
+    resolved = resolved.lstrip("./").replace("\\", "/")
+    return f"https://rocm.blogs.amd.com/{resolved}"
+
+
+def _extract_internal_rocm_image_path(image_url: str) -> str | None:
+    """Extract internal site image path from an image URL/reference."""
+    if not isinstance(image_url, str):
+        return None
+
+    normalized = image_url.strip()
+    if not normalized:
+        return None
+
+    if "://" in normalized:
+        normalized = normalized.split("://", 1)[-1]
+        normalized = normalized.split("/", 1)[1] if "/" in normalized else ""
+    elif normalized.startswith("/"):
+        normalized = normalized[1:]
+
+    normalized = normalized.split("?", 1)[0].split("#", 1)[0]
+    if "/_images/" in normalized:
+        normalized = "_images/" + normalized.split("/_images/", 1)[1]
+    elif "/images/" in normalized:
+        normalized = "images/" + normalized.split("/images/", 1)[1]
+    if normalized.startswith(("_images/", "images/")):
+        return normalized
+    return None
+
+
+def _is_webp_image_reference(image_reference: str) -> bool:
+    """Return True if image reference points to a WebP file."""
+    if not isinstance(image_reference, str):
+        return False
+    normalized = image_reference.strip()
+    if not normalized:
+        return False
+    normalized = normalized.split("?", 1)[0].split("#", 1)[0].lower()
+    return normalized.endswith(".webp")
 
 
 def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
@@ -258,20 +343,7 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
                 try:
                     regular_image = blog.grab_image(ROCmBlogs)
                     image_str = str(regular_image)
-                    if image_str.startswith("./"):
-                        image_str = image_str[2:]
-                    image_str = image_str.replace("\\", "/")
-
-                    image_filename = os.path.basename(image_str)
-                    if image_filename.lower().endswith((".jpg", ".jpeg", ".png")):
-                        base_name = os.path.splitext(image_filename)[0]
-                        image_filename = f"{base_name}.webp"
-                        safe_log_write(
-                            log_file_handle,
-                            f"AUTHOR PAGE: Converted image filename to WebP: '{image_filename}'\n",
-                        )
-
-                    image = f"https://rocm.blogs.amd.com/_images/{image_filename}"
+                    image = _to_author_card_image_url(ROCmBlogs, blog, image_str)
                     safe_log_write(
                         log_file_handle,
                         f"AUTHOR PAGE: Using fallback image: '{image}' for blog: '{title}'\n",
@@ -284,6 +356,58 @@ def generate_grid(ROCmBlogs, blog, lazy_load=False, use_og=False) -> str:
                     image = "https://rocm.blogs.amd.com/_images/generic.webp"
             else:
                 image = og_image
+                internal_image_path = _extract_internal_rocm_image_path(og_image)
+                if internal_image_path:
+                    safe_log_write(
+                        log_file_handle,
+                        f"AUTHOR PAGE: Internal OpenGraph image detected ('{internal_image_path}'), resolving through regular image pipeline for canonical WebP path\n",
+                    )
+                    try:
+                        regular_image = blog.grab_image(ROCmBlogs)
+                        image = _to_author_card_image_url(
+                            ROCmBlogs, blog, str(regular_image)
+                        )
+                    except Exception as fallback_error:
+                        safe_log_write(
+                            log_file_handle,
+                            f"AUTHOR PAGE: Error resolving fallback image for internal OpenGraph asset: {fallback_error}\n",
+                        )
+                        image = "https://rocm.blogs.amd.com/_images/generic.webp"
+                elif not str(og_image).startswith(("http://", "https://")):
+                    image = _to_author_card_image_url(ROCmBlogs, blog, str(og_image))
+                elif not _is_webp_image_reference(str(og_image)):
+                    safe_log_write(
+                        log_file_handle,
+                        f"AUTHOR PAGE: External OpenGraph image is not WebP ('{og_image}'), resolving via regular image pipeline for WebP-only output\n",
+                    )
+                    try:
+                        regular_image = blog.grab_image(ROCmBlogs)
+                        image = _to_author_card_image_url(
+                            ROCmBlogs, blog, str(regular_image)
+                        )
+                    except Exception as fallback_error:
+                        safe_log_write(
+                            log_file_handle,
+                            f"AUTHOR PAGE: Error resolving fallback image for non-WebP OpenGraph asset: {fallback_error}\n",
+                        )
+                        image = "https://rocm.blogs.amd.com/_images/generic.webp"
+
+                if not _is_webp_image_reference(str(image)):
+                    safe_log_write(
+                        log_file_handle,
+                        f"AUTHOR PAGE: Final image is not WebP ('{image}'), forcing regular image pipeline fallback\n",
+                    )
+                    try:
+                        regular_image = blog.grab_image(ROCmBlogs)
+                        image = _to_author_card_image_url(
+                            ROCmBlogs, blog, str(regular_image)
+                        )
+                    except Exception as fallback_error:
+                        safe_log_write(
+                            log_file_handle,
+                            f"AUTHOR PAGE: Error enforcing WebP-only final image: {fallback_error}\n",
+                        )
+                        image = "https://rocm.blogs.amd.com/_images/generic.webp"
         except Exception as og_image_error:
             safe_log_write(
                 log_file_handle,

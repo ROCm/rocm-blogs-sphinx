@@ -4,9 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v1.13.5] - 2026-02-19
+
 ### Fixed
 - Removed hash-based image filename rewriting and aligned grid/blog page image resolution to deterministic non-hashed `_images` paths so both surfaces reference the same generated asset.
 - Fixed blog page hero thumbnail behavior to enforce WebP-only resolution/conversion (no `.png`/`.jpg` fallback), matching grid thumbnail output expectations.
+- Fixed author-page grid cards to resolve stale/internal `og:image` links through the same grid image pipeline so updated `_images` paths are used consistently.
+- Enforced WebP-only image links on author-page grids by re-resolving internal and non-WebP `og:image` values through the canonical `_images/*.webp` pipeline.
 
 ## [v1.13.3] - 2026-02-09
 
