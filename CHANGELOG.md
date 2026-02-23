@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v1.13.6] - 2026-02-23
+
+### Fixed
+- Fixed blog metadata `property=og:image` generation to use canonical path-aware `_images/*.webp` filenames (for example, `artificial-intelligence-micro-world-images-micro_world_thumbnail.webp`) instead of basename-only links.
+
 ## [v1.13.5] - 2026-02-19
 
 ### Fixed
