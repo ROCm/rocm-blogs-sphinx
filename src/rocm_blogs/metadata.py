@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from rocm_blogs import ROCmBlogs
-from rocm_blogs.constants import SUPPORTED_FORMATS
 from sphinx.util import logging as sphinx_logging
 
 from .logger.logger import (create_step_log_file,
@@ -93,6 +92,69 @@ VERTICAL_IMPORTANCE = {
     "Developers": 1.0,
     "Robotics": 1.0,
 }
+
+
+def _sanitize_image_output_name(name: str) -> str:
+    """Convert a filename into a filesystem-safe output name."""
+    sanitized = re.sub(r"[^A-Za-z0-9._-]+", "-", name)
+    sanitized = re.sub(r"-{2,}", "-", sanitized).strip("-")
+    return sanitized
+
+
+def _build_canonical_og_image_name(
+    blogs_directory: str, blog_filepath: str, thumbnail_value: str
+) -> str:
+    """Build canonical _images filename for OpenGraph image metadata."""
+    thumbnail_normalized = str(thumbnail_value or "").strip().replace("\\", "/")
+    if not thumbnail_normalized:
+        return "generic.webp"
+
+    if thumbnail_normalized.startswith(("http://", "https://")):
+        external_tail = thumbnail_normalized.split("?", 1)[0].split("#", 1)[0]
+        external_basename = os.path.basename(external_tail)
+        if not external_basename:
+            return "generic.webp"
+        root, _ = os.path.splitext(_sanitize_image_output_name(external_basename))
+        return f"{root}.webp"
+
+    while thumbnail_normalized.startswith("./"):
+        thumbnail_normalized = thumbnail_normalized[2:]
+
+    blog_directory = os.path.dirname(blog_filepath)
+    thumbnail_basename = os.path.basename(thumbnail_normalized)
+    source_candidates = [
+        os.path.join(blogs_directory, thumbnail_normalized),
+        os.path.join(blog_directory, thumbnail_normalized),
+        os.path.join(blog_directory, "images", thumbnail_basename),
+        os.path.join(blogs_directory, "images", thumbnail_basename),
+    ]
+
+    source_path = next((path for path in source_candidates if os.path.exists(path)), None)
+    if source_path:
+        relative_key = os.path.relpath(source_path, blogs_directory).replace("\\", "/")
+    else:
+        relative_blog_path = os.path.relpath(blog_filepath, blogs_directory).replace(
+            "\\", "/"
+        )
+        relative_blog_dir = os.path.dirname(relative_blog_path)
+        if "/" in thumbnail_normalized:
+            relative_key = thumbnail_normalized
+        else:
+            relative_key = f"{relative_blog_dir}/images/{thumbnail_basename}"
+
+    if relative_key.startswith("_images/"):
+        relative_key = relative_key[len("_images/") :]
+
+    relative_parts = [
+        part for part in relative_key.split("/") if part and part not in {".", ".."}
+    ]
+    if not relative_parts:
+        relative_parts = [thumbnail_basename]
+
+    candidate = _sanitize_image_output_name("-".join(relative_parts))
+    root, _ = os.path.splitext(candidate)
+    return f"{root}.webp"
+
 
 # Pre-compiled regular expressions
 METADATA_REGEX_PATTERN = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
@@ -715,22 +777,17 @@ myst:
                             f"Thumbnail: {extracted_metadata['thumbnail']}\n",
                         )
 
-                        # Store original thumbnail for og:image (non-webp)
+                        # Store original thumbnail for logging and diagnostics.
                         extracted_og_image = extracted_metadata["thumbnail"]
                         extracted_thumbnail = extracted_metadata["thumbnail"]
 
-                        # Convert thumbnail to webp for regular use
-                        for f_format in SUPPORTED_FORMATS:
-                            if f_format in extracted_metadata["thumbnail"]:
-                                og_image_extracted = extracted_metadata[
-                                    "thumbnail"
-                                ].replace(f_format, ".webp")
-                                break
-
-                        if ".webp" not in og_image_extracted:
-                            og_image_extracted = (
-                                og_image_extracted.split(".")[0] + ".webp"
-                            )
+                        # Build canonical OpenGraph image filename that matches
+                        # generated _images naming (path-aware, always .webp).
+                        og_image_extracted = _build_canonical_og_image_name(
+                            rocm_blogs_instance.blogs_directory,
+                            blog_filepath,
+                            extracted_metadata["thumbnail"],
+                        )
 
                         safe_log_write(
                             metadata_log_file_handle,
