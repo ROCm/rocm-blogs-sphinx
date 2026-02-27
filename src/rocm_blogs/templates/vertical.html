@@ -237,22 +237,6 @@
 
 ::::{grid} 1 2 3 4
 :margin 2
-{{ grid_items }}
-::::
-{% endif %}
-
-{% if eco_grid_items %}
-<div class="container">
-    <h2>Ecosystems & Partners</h2>
-    <a href="{{ formatted_vertical }}-ecosystems-and-partners.html">
-        <button id="buttonWrapper">
-            See All
-        </button>
-    </a>
-</div>
-
-::::{grid} 1 2 3 4
-:margin 2
 {{ eco_grid_items }}
 ::::
 {% endif %}
@@ -277,6 +261,22 @@
 <div class="container">
     <h2>Software Tools & Optimizations</h2>
     <a href="{{ formatted_vertical }}-software-tools-and-optimizations.html">
+        <button id="buttonWrapper">
+            See All
+        </button>
+    </a>
+</div>
+
+::::{grid} 1 2 3 4
+:margin 2
+{{ grid_items }}
+::::
+{% endif %}
+
+{% if eco_grid_items %}
+<div class="container">
+    <h2>Ecosystems & Partners</h2>
+    <a href="{{ formatted_vertical }}-ecosystems-and-partners.html">
         <button id="buttonWrapper">
             See All
         </button>
