@@ -241,22 +241,6 @@
 ::::
 {% endif %}
 
-{% if eco_grid_items %}
-<div class="container">
-    <h2>Ecosystems & Partners</h2>
-    <a href="{{ formatted_vertical }}-ecosystems-and-partners.html">
-        <button id="buttonWrapper">
-            See All
-        </button>
-    </a>
-</div>
-
-::::{grid} 1 2 3 4
-:margin 2
-{{ eco_grid_items }}
-::::
-{% endif %}
-
 {% if application_grid_items %}
 <div class="container">
     <h2>Applications & Models</h2>
@@ -286,6 +270,22 @@
 ::::{grid} 1 2 3 4
 :margin 2
 {{ software_grid_items }}
+::::
+{% endif %}
+
+{% if eco_grid_items %}
+<div class="container">
+    <h2>Ecosystems & Partners</h2>
+    <a href="{{ formatted_vertical }}-ecosystems-and-partners.html">
+        <button id="buttonWrapper">
+            See All
+        </button>
+    </a>
+</div>
+
+::::{grid} 1 2 3 4
+:margin 2
+{{ eco_grid_items }}
 ::::
 {% endif %}
 
