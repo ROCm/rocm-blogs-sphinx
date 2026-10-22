@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v1.13.8] - 2026-10-22
+
+### Fixed
+- Fixed blog share links (for example, LinkedIn) being hardcoded to the `artificial-intelligence` category. The category is now derived from the blog's file path, so shared links resolve for all categories.
+
 ## [v1.13.6] - 2026-02-23
 
 ### Fixed
