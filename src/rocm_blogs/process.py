@@ -149,7 +149,8 @@ def quickshare(blog_entry) -> str:
         # Determine the blog URL
         if hasattr(blog_entry, "file_path"):
             blog_directory = os.path.basename(os.path.dirname(blog_entry.file_path))
-            share_url = f"http://rocm.blogs.amd.com/artificial-intelligence/{blog_directory}/README.html"
+            category = os.path.basename(os.path.dirname(os.path.dirname(blog_entry.file_path)))
+            share_url = f"http://rocm.blogs.amd.com/{category}/{blog_directory}/README.html"
         else:
             share_url = f"http://rocm.blogs.amd.com{blog_entry.grab_href()[1:]}"
 
