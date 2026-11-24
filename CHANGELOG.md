@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v1.14.0] - 2026-11-24
+
+### Added
+- Emit a `robots.txt` carrying an explicit Content Signals policy
+  (`search=yes, ai-input=yes, ai-train=yes`) on `build-finished`. Configurable
+  from `conf.py` via `rocm_blogs_content_signal`; set to an empty string to
+  disable. A project-supplied `robots.txt` already in the output is preserved.
+- Emit a named group for 22 AI crawlers (GPTBot, ClaudeBot, Google-Extended,
+  CCBot, PerplexityBot and others), each repeating the full policy. A crawler
+  matching a named group ignores the wildcard group, so the repetition is
+  required for the signal to reach it. Configurable via
+  `rocm_blogs_named_crawlers`; set to an empty list for wildcard only.
+
 ## [v1.13.8] - 2026-10-22
 
 ### Fixed

@@ -23,6 +23,8 @@ from sphinx.util import logging as sphinx_logging
 from .process import (_create_pagination_controls, _generate_grid_items,
                       _generate_lazy_loaded_grid_items, _process_category,
                       process_single_blog)
+from .robots import (DEFAULT_CONTENT_SIGNAL, DEFAULT_NAMED_CRAWLERS,
+                     write_robots_txt)
 
 sphinx_diagnostics = sphinx_logging.getLogger(__name__)
 
@@ -4433,6 +4435,15 @@ def setup(sphinx_app: Sphinx) -> dict:
     sphinx_app.add_config_value("rocm_blogs_debug_visualize", False, "env", [bool])
     sphinx_app.add_config_value("rocm_blogs_log_level", "INFO", "env", [str])
     sphinx_app.add_config_value("rocm_blogs_log_file", None, "env", [str, type(None)])
+    # Content Signals policy emitted into robots.txt. Empty string disables.
+    sphinx_app.add_config_value(
+        "rocm_blogs_content_signal", DEFAULT_CONTENT_SIGNAL, "html", [str]
+    )
+    # Crawlers given their own robots.txt group. Empty list emits only the
+    # wildcard group.
+    sphinx_app.add_config_value(
+        "rocm_blogs_named_crawlers", DEFAULT_NAMED_CRAWLERS, "html"
+    )
     sphinx_app.add_config_value(
         "rocm_blogs_enable_performance_tracking", False, "env", [bool]
     )
@@ -4462,6 +4473,7 @@ def setup(sphinx_app: Sphinx) -> dict:
     # Ensure visualization activates from config once the builder is ready.
     sphinx_app.connect("builder-inited", _activate_visualization_from_app)
     sphinx_app.connect("build-finished", _finalize_visualization)
+    sphinx_app.connect("build-finished", write_robots_txt)
 
     log_message(
         "info",
